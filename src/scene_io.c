@@ -7,6 +7,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <errno.h>
+#include <stdint.h>
 
 #define MAX_LINE_LENGTH 1024
 #define INITIAL_OBJECT_CAPACITY 16
@@ -61,7 +62,7 @@ static bool parse_size(const char **pos, size_t *out) {
 
     char *end;
     errno = 0;
-    unsigned long val = strtoul(start, &end);
+    unsigned long val = strtoul(start, &end, 10);
     if (end == start || errno == ERANGE || val == 0) return false;
     *out = (size_t)val;
     *pos = end;
@@ -172,7 +173,6 @@ bool load_scene(const char *filename, Scene *out_scene,
         /* Extract the directive keyword. */
         char keyword[32];
         int kw_len = 0;
-        const char *kw_start = pos;
         while (*pos && !isspace((unsigned char)*pos) && kw_len < 31) {
             keyword[kw_len++] = *pos++;
         }
