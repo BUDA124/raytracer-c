@@ -1,9 +1,9 @@
-# P2 Scene: 8 spheres at 1008x567
+# P2 Scene: 8 spheres at 1300x760
 # Color flat rendering - no lighting needed
 
-WINDOW -10 -5.625 10 5.625
+WINDOW -10 -5.846 10 5.846
 EYE 0 0 -15
-RES 1008 567
+RES 1300 760
 BG 0.05 0.05 0.10
 
 # Top row - 3 spheres

@@ -2,12 +2,11 @@
 #include "vector3.h"
 #include "numeric.h"
 #include <math.h>
-#include <stdio.h>
 
 bool intersect_sphere(const Ray *ray, const Sphere *sphere,
                       double t_min, double t_max,
-                      double *out_t, Vector3 *out_outward_normal) {
-    if (!ray || !sphere || !out_t || !out_outward_normal) return false;
+                      double *out_t, Vector3 *out_normal) {
+    if (!ray || !sphere || !out_t || !out_normal) return false;
     if (t_min <= 0.0 || t_max < t_min) return false;
     if (sphere->radius <= 0.0) return false;
 
@@ -37,17 +36,16 @@ bool intersect_sphere(const Ray *ray, const Sphere *sphere,
 
     *out_t = t;
     Point3 point = vec3_add(ray->origin, vec3_scale(ray->direction, t));
-    *out_outward_normal = vec3_scale(
-        vec3_sub(point, sphere->center), 1.0 / sphere->radius);
+    *out_normal = vec3_normalize(vec3_sub(point, sphere->center));
     return true;
 }
 
 bool intersect_polygon(const Ray *ray, const Polygon *polygon,
                        double t_min, double t_max,
-                       double *out_t, Vector3 *out_outward_normal) {
+                       double *out_t, Vector3 *out_normal) {
     /* Polygon intersection not implemented for P2. */
     (void)ray; (void)polygon; (void)t_min; (void)t_max;
-    (void)out_t; (void)out_outward_normal;
+    (void)out_t; (void)out_normal;
     return false;
 }
 
@@ -90,31 +88,3 @@ bool first_intersection(const Ray *ray, const Scene *scene,
     }
     return found;
 }
-
-bool any_intersection(const Ray *ray, const Scene *scene,
-                      double t_min, double t_max) {
-    if (!ray || !scene) return false;
-    if (t_min <= 0.0 || t_max < t_min) return false;
-
-    for (size_t i = 0; i < scene->object_count; i++) {
-        const Object *obj = &scene->objects[i];
-        double candidate_t;
-        Vector3 outward_normal;
-
-        if (obj->type == OBJ_SPHERE) {
-            if (intersect_sphere(ray, &obj->geo.sphere,
-                                 t_min, t_max,
-                                 &candidate_t, &outward_normal)) {
-                return true;
-            }
-        } else if (obj->type == OBJ_POLYGON) {
-            if (intersect_polygon(ray, &obj->geo.polygon,
-                                  t_min, t_max,
-                                  &candidate_t, &outward_normal)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-

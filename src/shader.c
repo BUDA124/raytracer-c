@@ -1,7 +1,10 @@
 #include "shader.h"
-#include <stdio.h>
 
-ColorRGB shade_flat(const HitRecord *hit) {
+ColorRGB shade_flat(const HitRecord *hit, ColorRGB background,
+                    bool has_hit) {
+    if (!has_hit) {
+        return background;
+    }
     return hit->material.color;
 }
 
@@ -18,4 +21,3 @@ bool is_in_shadow(const HitRecord *hit, Point3 light_position,
     (void)hit; (void)light_position; (void)scene;
     return false;
 }
-

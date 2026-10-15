@@ -6,7 +6,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdint.h>
 
 static void print_usage(const char *prog) {
     fprintf(stderr,
@@ -65,6 +64,9 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    /* RenderMode is stored but render_scene currently only does flat. */
+    (void)mode;
+
     /* Load scene. */
     Scene scene = {0};
     char error_msg[512];
@@ -76,34 +78,11 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Scene loaded: %zux%zu, %zu objects\n",
             scene.width, scene.height, scene.object_count);
 
-    /* Check for overflow before allocating framebuffer. */
-    size_t pixel_count = scene.width * scene.height;
-    if (scene.width != 0 && pixel_count / scene.width != scene.height) {
-        fprintf(stderr, "Error: Framebuffer dimensions overflow.\n");
-        free_scene(&scene);
-        return EXIT_FAILURE;
-    }
-
-    /* Also check multiplication by sizeof(ColorRGB). */
-    size_t fb_size = pixel_count * sizeof(ColorRGB);
-    if (pixel_count != 0 && fb_size / pixel_count != sizeof(ColorRGB)) {
-        fprintf(stderr, "Error: Framebuffer allocation size overflow.\n");
-        free_scene(&scene);
-        return EXIT_FAILURE;
-    }
-
-    ColorRGB *framebuffer = malloc(fb_size);
-    if (!framebuffer) {
-        fprintf(stderr, "Error: Failed to allocate framebuffer (%zu bytes).\n",
-                fb_size);
-        free_scene(&scene);
-        return EXIT_FAILURE;
-    }
-
     /* Render. */
-    if (!render_scene(&scene, mode, framebuffer)) {
+    ColorRGB *framebuffer = NULL;
+    render_scene(&scene, &framebuffer);
+    if (!framebuffer) {
         fprintf(stderr, "Error: Rendering failed.\n");
-        free(framebuffer);
         free_scene(&scene);
         return EXIT_FAILURE;
     }

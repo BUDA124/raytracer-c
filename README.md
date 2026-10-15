@@ -77,5 +77,5 @@ x1 y1 z1
 
 ## Project Status
 
-- [x] P2: Flat color rendering of 8+ spheres at 1008x567
+- [x] P2: Flat color rendering of 8+ spheres at 1300x760
 - [ ] P3: Phong shading with polygons at 1300x760
