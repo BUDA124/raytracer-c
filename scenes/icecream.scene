@@ -1,0 +1,51 @@
+# P2 Scene: 8 spheres at 1008x567
+# Color flat rendering - no lighting needed
+
+WINDOW -10 -5.625 10 5.625
+EYE 0 0 -15
+RES 1008 567
+BG 0.05 0.05 0.10
+
+# body snowman center
+SPHERE 0 -2 10 3.0 0.5 0.5 0.9
+SPHERE 0 1.8 11 2.5 0.7 0.7 0.93
+SPHERE 0 5.5 12 1.8 0.8 0.8 0.95
+
+# body clown (right)
+SPHERE 8 -2 10 3.0 0.25 0.05 0.05
+SPHERE 7 1.8 11 2.5 0.20 0.05 0.05
+SPHERE 6 5.5 12 1.8 0.15 0.05 0.05
+
+# body left (normal ice cream)
+SPHERE -8 -2 10 3.0 0.65 0.25 0.7
+SPHERE -7 1.8 11 2.5 0.3 0.69 0.7
+SPHERE -6 5.5 12 1.8 0.18 0.92 0.25
+
+# face snowman 
+SPHERE 0 4.9 9 0.12 0.92 0.6 0.2
+
+SPHERE -0.3 5.4 9 0.15 0.05 0.07 0.2
+SPHERE 0.3 5.4 9 0.15 0.05 0.07 0.2
+
+SPHERE -0.4 4.5 9 0.1 0.1 0.1 0.1
+SPHERE -0.25 4.3 9 0.1 0.1 0.1 0.1
+SPHERE 0 4.25 9 0.1 0.1 0.1 0.1
+SPHERE 0.25 4.3 9 0.1 0.1 0.1 0.1
+SPHERE 0.4 4.5 9 0.1 0.1 0.1 0.1
+
+# face clown
+SPHERE 6 4.9 9 0.12 0.97 0.1 0.1
+
+SPHERE 5.7 5.4 9 0.22 0.88 0.88 0.2
+SPHERE 6.3 5.4 9 0.22 0.88 0.88 0.2
+
+SPHERE 5.6 4.5 9 0.1 0.95 0.8 0.8
+SPHERE 5.75 4.3 9 0.1 0.95 0.8 0.8
+SPHERE 6 4.25 9 0.1 0.95 0.8 0.8
+SPHERE 6.25 4.3 9 0.1 0.95 0.8 0.8
+SPHERE 6.4 4.5 9 0.1 0.95 0.8 0.8
+
+# Base
+SPHERE 9 -7 6 4 0.95 0.6 0.4
+SPHERE 0 -7 6 4 0.95 0.6 0.4
+SPHERE -9 -7 6 4 0.95 0.6 0.4
