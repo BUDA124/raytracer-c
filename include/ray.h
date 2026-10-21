@@ -5,6 +5,6 @@
 
 Ray create_primary_ray(Point3 eye, const ViewWindow *window,
                        int width, int height, int i, int j);
-void render_scene(const Scene *scene, ColorRGB **framebuffer);
+bool render_scene(const Scene *scene, RenderMode mode, ColorRGB *framebuffer);
 
 #endif
