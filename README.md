@@ -34,6 +34,9 @@ make
 # P2: Flat color rendering
 ./raytracer scenes/p2.scene --mode flat --output images/p2.avs
 
+#TC: iluminaciòn difusa. 
+./raytracer scenes/icecream.scene --mode phong --output images/TC.avs
+
 # P3: Phong shading
 ./raytracer scenes/p3_1.scene --mode phong --output images/p3_1.avs
 ./raytracer scenes/p3_2.scene --mode phong --output images/p3_2.avs

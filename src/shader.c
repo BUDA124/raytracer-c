@@ -14,11 +14,6 @@ ColorRGB shade_phong(const Ray *ray, const HitRecord *hit,
                      const Scene *scene) {
     (void)ray; /* Diffuse intensity does not depend on the viewer direction. */
 
-    if (!hit || !scene) {
-        ColorRGB black = {0.0, 0.0, 0.0};
-        return black;
-    }
-
     const Material *material = &hit->material;
     const Vector3 normal = hit->normal; /* Already unit length. */
 
