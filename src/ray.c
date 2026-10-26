@@ -57,7 +57,7 @@ bool render_scene(const Scene *scene, RenderMode mode, ColorRGB *framebuffer) {
             if (!has_hit) {
                 color = scene->background_color;
             } else if (mode == RENDER_FLAT){
-                color = shade_flat(&hit);
+                color = shade_flat(&hit, scene->background_color, true);
             } else {
                 color = shade_phong(&ray,&hit,scene);
             }

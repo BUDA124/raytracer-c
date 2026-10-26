@@ -44,7 +44,11 @@ typedef struct {
     Material material;
 } HitRecord;
 
-typedef struct { Point3 position; ColorRGB intensity; } Light;
+typedef struct {
+    Point3 position;
+    ColorRGB intensity;
+    double c1, c2, c3; /* Distance attenuation coefficients. */
+} Light;
 typedef struct { double x_min, y_min, x_max, y_max; } ViewWindow;
 
 typedef struct {

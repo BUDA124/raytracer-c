@@ -1,5 +1,6 @@
 #include "scene_io.h"
 #include "numeric.h"
+#include "vector3.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -8,6 +9,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
+
 
 #define MAX_LINE_LENGTH 1024
 #define INITIAL_OBJECT_CAPACITY 16
@@ -444,19 +446,36 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
         }
-        /* --- LIGHT (accept and store for forward compatibility) --- */
+        /* --- LIGHT --- */
         else if (strcmp(keyword, "LIGHT") == 0) {
-            /* Accept LIGHT for forward compatibility with P3 scenes. */
             double lx, ly, lz, lr, lg, lb;
+            /* Six-value legacy form defaults to constant attenuation. */
+            double c1 = 1.0, c2 = 0.0, c3 = 0.0;
             if (!parse_double(&pos, &lx) || !parse_double(&pos, &ly) ||
                 !parse_double(&pos, &lz) || !parse_double(&pos, &lr) ||
                 !parse_double(&pos, &lg) || !parse_double(&pos, &lb)) {
                 snprintf(error_message, error_capacity,
-                         "Line %zu: LIGHT requires 6 values (x y z r g b)",
+                         "Line %zu: LIGHT requires x y z r g b [c1 c2 c3]",
                          line_num);
                 success = false;
                 break;
             }
+
+            const char *after_rgb = pos;
+            double parsed_c1;
+            if (parse_double(&pos, &parsed_c1)) {
+                if (!parse_double(&pos, &c2) || !parse_double(&pos, &c3)) {
+                    snprintf(error_message, error_capacity,
+                             "Line %zu: LIGHT attenuation requires c1 c2 c3",
+                             line_num);
+                    success = false;
+                    break;
+                }
+                c1 = parsed_c1;
+            } else {
+                pos = after_rgb;
+            }
+
             if (!expect_end(pos)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: LIGHT has extra tokens", line_num);
@@ -470,7 +489,15 @@ bool load_scene(const char *filename, Scene *out_scene,
                 success = false;
                 break;
             }
-            /* Store light - grow array. */
+            if (c1 < 0.0 || c2 < 0.0 || c3 < 0.0 ||
+                (c1 == 0.0 && c2 == 0.0 && c3 == 0.0)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: LIGHT requires nonnegative c1/c2/c3, not all zero",
+                         line_num);
+                success = false;
+                break;
+            }
+
             size_t new_count = tmp.light_count + 1;
             Light *new_lights = realloc(tmp.lights, new_count * sizeof(Light));
             if (!new_lights) {
@@ -481,12 +508,14 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
             tmp.lights = new_lights;
-            tmp.lights[tmp.light_count].position.x = lx;
-            tmp.lights[tmp.light_count].position.y = ly;
-            tmp.lights[tmp.light_count].position.z = lz;
-            tmp.lights[tmp.light_count].intensity.r = lr;
-            tmp.lights[tmp.light_count].intensity.g = lg;
-            tmp.lights[tmp.light_count].intensity.b = lb;
+            Light *light = &tmp.lights[tmp.light_count];
+            light->position = vec3_create(lx, ly, lz);
+            light->intensity.r = lr;
+            light->intensity.g = lg;
+            light->intensity.b = lb;
+            light->c1 = c1;
+            light->c2 = c2;
+            light->c3 = c3;
             tmp.light_count = new_count;
         }
         /* --- POLYGON (not supported in P2) --- */

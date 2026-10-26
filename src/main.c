@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 
 static void print_usage(const char *prog) {
     fprintf(stderr,
@@ -64,9 +65,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* RenderMode is stored but render_scene currently only does flat. */
-    (void)mode;
-
     /* Load scene. */
     Scene scene = {0};
     char error_msg[512];
@@ -79,10 +77,16 @@ int main(int argc, char *argv[]) {
             scene.width, scene.height, scene.object_count);
 
     /* Render. */
-    ColorRGB *framebuffer = NULL;
-    render_scene(&scene, &framebuffer);
-    if (!framebuffer) {
+    if (scene.width > SIZE_MAX / scene.height ||
+        scene.width * scene.height > SIZE_MAX / sizeof(ColorRGB)) {
+        fprintf(stderr, "Error: Image dimensions are too large.\n");
+        free_scene(&scene);
+        return EXIT_FAILURE;
+    }
+    ColorRGB *framebuffer = malloc(scene.width * scene.height * sizeof(ColorRGB));
+    if (!framebuffer || !render_scene(&scene, mode, framebuffer)) {
         fprintf(stderr, "Error: Rendering failed.\n");
+        free(framebuffer);
         free_scene(&scene);
         return EXIT_FAILURE;
     }
