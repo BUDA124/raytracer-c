@@ -37,15 +37,13 @@ make
 #TC: iluminaciòn difusa. 
 ./raytracer scenes/icecream.scene --mode phong --output images/TC.avs
 
-#ESCENAS P3
-./raytracer scenes/01_aurora_lighthouse.scene --mode phong --output images/TC.avs
-./raytracer scenes/02_burbujas_submarinas.scene --mode phong --output images/TC.avs
+
 
 
 
 # P3: Phong shading
-./raytracer scenes/p3_1.scene --mode phong --output images/p3_1.avs
-./raytracer scenes/p3_2.scene --mode phong --output images/p3_2.avs
+./raytracer scenes/P3_1.scene --mode phong --output images/p3_1.avs
+./raytracer scenes/P3_2.scene --mode phong --output images/p3_2.avs
 ```
 
 ### Makefile targets

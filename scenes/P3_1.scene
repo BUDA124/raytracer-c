@@ -2,7 +2,7 @@
 # Esfera naranja, estructura superior oscura y torre hasta el suelo
 
 WINDOW -7.000 -4.000 7.000 4.000
-EYE 0 0 -15
+EYE 0 0 -130
 RES 1300 760
 
 BG 0.0120 0.0220 0.0650

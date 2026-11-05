@@ -1,6 +1,6 @@
 # Burbujas submarinas - lecho marino extendido, vegetacion, peces y burbujas
 WINDOW -10 -5.846 10 5.846
-EYE -4 0 -175
+EYE -4 0 -11000
 RES 1300 760
 BG 0.015 0.12 0.22
 AMBIENT 0.12 0.12 0.16
