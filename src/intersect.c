@@ -1,7 +1,79 @@
+
 #include "intersect.h"
 #include "vector3.h"
 #include "numeric.h"
 #include <math.h>
+
+#define POLYGON_EPSILON 1e-9
+#define PLANE_EPSILON 1e-7
+
+static void project_point(Point3 p, size_t axis,
+                          double *x, double *y) {
+    if (axis == 0) {
+        *x = p.y;
+        *y = p.z;
+    } else if (axis == 1) {
+        *x = p.x;
+        *y = p.z;
+    } else {
+        *x = p.x;
+        *y = p.y;
+    }
+}
+
+static bool point_on_segment(double px, double py,
+                             double ax, double ay,
+                             double bx, double by) {
+    double dx = bx - ax;
+    double dy = by - ay;
+    double length = hypot(dx, dy);
+
+    if (length < POLYGON_EPSILON)
+        return hypot(px - ax, py - ay) <= POLYGON_EPSILON;
+
+    double cross = (px - ax) * dy - (py - ay) * dx;
+
+    if (fabs(cross) > POLYGON_EPSILON * length)
+        return false;
+
+    double dot = (px - ax) * dx + (py - ay) * dy;
+
+    return dot >= -POLYGON_EPSILON * length &&
+           dot <= dx * dx + dy * dy +
+                  POLYGON_EPSILON * length;
+}
+
+static bool point_in_polygon(Point3 point,
+                             const Polygon *polygon,
+                             size_t axis) {
+    double px, py;
+    project_point(point, axis, &px, &py);
+
+    bool inside = false;
+    size_t count = polygon->vertex_count;
+
+    for (size_t i = 0, j = count - 1;
+         i < count; j = i++) {
+
+        double xi, yi, xj, yj;
+
+        project_point(polygon->vertices[i], axis, &xi, &yi);
+        project_point(polygon->vertices[j], axis, &xj, &yj);
+
+        if (point_on_segment(px, py, xi, yi, xj, yj))
+            return true;
+
+        if ((yi > py) != (yj > py)) {
+            double x_intersection =
+                xi + (py - yi) * (xj - xi) / (yj - yi);
+
+            if (px < x_intersection)
+                inside = !inside;
+        }
+    }
+
+    return inside;
+}
 
 bool intersect_sphere(const Ray *ray, const Sphere *sphere,
                       double t_min, double t_max,
@@ -43,10 +115,84 @@ bool intersect_sphere(const Ray *ray, const Sphere *sphere,
 bool intersect_polygon(const Ray *ray, const Polygon *polygon,
                        double t_min, double t_max,
                        double *out_t, Vector3 *out_normal) {
-    /* Polygon intersection not implemented for P2. */
-    (void)ray; (void)polygon; (void)t_min; (void)t_max;
-    (void)out_t; (void)out_normal;
-    return false;
+    if (!ray || !polygon || !out_t || !out_normal)
+        return false;
+
+    if (!polygon->vertices || polygon->vertex_count < 3)
+        return false;
+
+    if (t_min <= 0.0 || t_max < t_min)
+        return false;
+
+    Point3 p0 = polygon->vertices[0];
+    Vector3 normal = {0.0, 0.0, 0.0};
+    bool valid = false;
+
+    for (size_t i = 1; i + 1 < polygon->vertex_count; i++) {
+        Vector3 edge1 = vec3_sub(polygon->vertices[i], p0);
+
+        for (size_t j = i + 1; j < polygon->vertex_count; j++) {
+            Vector3 edge2 = vec3_sub(polygon->vertices[j], p0);
+            normal = vec3_cross(edge1, edge2);
+
+            if (vec3_length(normal) > POLYGON_EPSILON) {
+                normal = vec3_normalize(normal);
+                valid = true;
+                break;
+            }
+        }
+
+        if (valid)
+            break;
+    }
+
+    if (!valid)
+        return false;
+
+    for (size_t i = 0; i < polygon->vertex_count; i++) {
+        Vector3 diff = vec3_sub(polygon->vertices[i], p0);
+
+        if (fabs(vec3_dot(diff, normal)) > PLANE_EPSILON)
+            return false;
+    }
+
+    double denominator = vec3_dot(normal, ray->direction);
+
+    if (fabs(denominator) < POLYGON_EPSILON)
+        return false;
+
+    Vector3 diff = vec3_sub(p0, ray->origin);
+    double t = vec3_dot(diff, normal) / denominator;
+
+    if (t < t_min || t > t_max)
+        return false;
+
+    Point3 point = vec3_add(
+        ray->origin,
+        vec3_scale(ray->direction, t)
+    );
+
+    size_t axis = 0;
+
+    if (fabs(normal.y) > fabs(normal.x))
+        axis = 1;
+
+    if (fabs(normal.z) > fabs(
+            axis == 0 ? normal.x : normal.y))
+        axis = 2;
+
+    if (!point_in_polygon(point, polygon, axis))
+        return false;
+
+    if (vec3_length(polygon->outward_normal) > POLYGON_EPSILON &&
+        vec3_dot(normal, polygon->outward_normal) < 0.0) {
+        normal = vec3_scale(normal, -1.0);
+    }
+
+    *out_t = t;
+    *out_normal = normal;
+
+    return true;
 }
 
 bool first_intersection(const Ray *ray, const Scene *scene,
