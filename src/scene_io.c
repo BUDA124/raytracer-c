@@ -1,6 +1,7 @@
 #include "scene_io.h"
 #include "numeric.h"
 #include "vector3.h"
+#include "geometry.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -518,14 +519,151 @@ bool load_scene(const char *filename, Scene *out_scene,
             light->c3 = c3;
             tmp.light_count = new_count;
         }
-        /* --- POLYGON (not supported in P2) --- */
+        
+/* --- POLYGON --- */
         else if (strcmp(keyword, "POLYGON") == 0) {
-            snprintf(error_message, error_capacity,
-                     "Line %zu: POLYGON directive is not yet supported "
-                     "(will be available in P3)", line_num);
-            success = false;
-            break;
+            size_t vertex_count;
+            double r, g, b, ka, kd, ks, shininess;
+            size_t polygon_line = line_num;
+
+            if (!parse_size(&pos, &vertex_count) || vertex_count < 3 ||
+                !parse_double(&pos, &r) || !parse_double(&pos, &g) ||
+                !parse_double(&pos, &b) || !parse_double(&pos, &ka) ||
+                !parse_double(&pos, &kd) || !parse_double(&pos, &ks) ||
+                !parse_double(&pos, &shininess) || !expect_end(pos)) {
+
+                snprintf(error_message, error_capacity,
+                        "Line %zu: POLYGON requires vertex_count r g b ka kd ks shininess",
+                        polygon_line);
+                success = false;
+                break;
+            }
+
+            if (!validate_color(r, g, b) ||
+                ka < 0.0 || ka > 1.0 ||
+                kd < 0.0 || kd > 1.0 ||
+                ks < 0.0 || ks > 1.0 ||
+                shininess < 1.0) {
+
+                snprintf(error_message, error_capacity,
+                        "Line %zu: Invalid POLYGON color or material coefficients",
+                        polygon_line);
+                success = false;
+                break;
+            }
+
+            if (vertex_count > SIZE_MAX / sizeof(Point3)) {
+                snprintf(error_message, error_capacity,
+                        "Line %zu: Too many POLYGON vertices",
+                        polygon_line);
+                success = false;
+                break;
+            }
+
+            Polygon polygon = {0};
+            polygon.vertex_count = vertex_count;
+            polygon.vertices = malloc(vertex_count * sizeof(Point3));
+
+            if (!polygon.vertices) {
+                snprintf(error_message, error_capacity,
+                        "Line %zu: Memory allocation failed for POLYGON",
+                        polygon_line);
+                success = false;
+                break;
+            }
+
+            /* Read the polygon vertices from the following lines. */
+            for (size_t i = 0; i < vertex_count; ) {
+                if (!fgets(line_buf, sizeof(line_buf), fp)) {
+                    snprintf(error_message, error_capacity,
+                            "Line %zu: POLYGON expected %zu vertices, got %zu",
+                            polygon_line, vertex_count, i);
+                    success = false;
+                    break;
+                }
+
+                ++line_num;
+                line_len = strlen(line_buf);
+
+                if (line_len > 0 &&
+                    line_buf[line_len - 1] != '\n' && !feof(fp)) {
+
+                    snprintf(error_message, error_capacity,
+                            "Line %zu: Polygon vertex line is too long",
+                            line_num);
+                    success = false;
+                    break;
+                }
+
+                strip_comment(line_buf);
+
+                if (is_blank(line_buf))
+                    continue;
+
+                const char *vertex_pos = skip_spaces(line_buf);
+                double x, y, z;
+
+                if (!parse_double(&vertex_pos, &x) ||
+                    !parse_double(&vertex_pos, &y) ||
+                    !parse_double(&vertex_pos, &z) ||
+                    !expect_end(vertex_pos)) {
+
+                    snprintf(error_message, error_capacity,
+                            "Line %zu: POLYGON vertex requires x y z",
+                            line_num);
+                    success = false;
+                    break;
+                }
+
+                polygon.vertices[i] = vec3_create(x, y, z);
+                ++i;
+            }
+
+            /* Prepare the polygon after reading all its vertices. */
+            if (success && !prepare_polygon(&polygon, error_message,
+                                            error_capacity)) {
+                char detail[128];
+
+                snprintf(detail, sizeof(detail), "%s", error_message);
+
+                snprintf(error_message, error_capacity,
+                        "Line %zu: Invalid POLYGON: %s",
+                        polygon_line, detail);
+
+                success = false;
+            }
+
+            if (!success) {
+                free(polygon.vertices);
+                break;
+            }
+
+            /* Create the scene object. */
+            Object obj;
+            memset(&obj, 0, sizeof(obj));
+
+            obj.type = OBJ_POLYGON;
+
+            obj.material.color = (ColorRGB){r, g, b};
+            obj.material.ka = ka;
+            obj.material.kd = kd;
+            obj.material.ks = ks;
+            obj.material.shininess = shininess;
+
+            obj.geo.polygon = polygon;
+
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+                free(polygon.vertices);
+
+                snprintf(error_message, error_capacity,
+                        "Line %zu: Memory allocation failed for POLYGON",
+                        polygon_line);
+
+                success = false;
+                break;
+            }
         }
+
         /* --- Unknown directive --- */
         else {
             snprintf(error_message, error_capacity,
@@ -560,9 +698,16 @@ bool load_scene(const char *filename, Scene *out_scene,
     }
 
     if (!success) {
-        /* Clean up partial allocations. */
+        /* Free vertices belonging to polygons already added. */
+        for (size_t i = 0; i < obj_count; i++) {
+            if (objects[i].type == OBJ_POLYGON) {
+                free(objects[i].geo.polygon.vertices);
+            }
+        }
+
         free(objects);
         free(tmp.lights);
+
         memset(out_scene, 0, sizeof(Scene));
         return false;
     }
