@@ -21,7 +21,6 @@ bool prepare_polygon(Polygon *polygon, char *error_message,
     Point3 p0 = polygon->vertices[0];
     Vector3 normal = {0.0, 0.0, 0.0};
 
-    /* Find three non-collinear vertices. */
     for (size_t i = 1; i + 1 < polygon->vertex_count; i++) {
         Vector3 edge1 = vec3_sub(polygon->vertices[i], p0);
 
@@ -50,7 +49,6 @@ bool prepare_polygon(Polygon *polygon, char *error_message,
 
     normal = vec3_scale(normal, 1.0 / normal_length);
 
-    /* Verify that all vertices belong to the same plane. */
     for (size_t i = 1; i < polygon->vertex_count; i++) {
         Vector3 difference = vec3_sub(polygon->vertices[i], p0);
 
@@ -63,10 +61,8 @@ bool prepare_polygon(Polygon *polygon, char *error_message,
         }
     }
 
-    /* Store the unit normal, preserving vertex orientation. */
     polygon->outward_normal = normal;
 
-    /* Choose the projection axis using the largest normal component. */
     polygon->dropped_axis = 0;
 
     if (fabs(normal.y) > fabs(normal.x))

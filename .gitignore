@@ -1,14 +1,11 @@
-# Build artifacts
 *.o
 *.d
 raytracer
 raytracer.exe
 
-# Output images
 images/*
 !images/.gitkeep
 
-# OS and Editor files
 .DS_Store
 Thumbs.db
 *.swp
@@ -16,7 +13,6 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Assistant and environment metadata
 .ai/
 .gemini/
 .claude/

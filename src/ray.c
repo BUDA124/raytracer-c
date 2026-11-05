@@ -34,7 +34,7 @@ bool render_scene(const Scene *scene, RenderMode mode, ColorRGB *framebuffer) {
     size_t w = scene->width;
     size_t h = scene->height;
 
-    if (!scene || !framebuffer || w == 0 || 
+    if (!scene || !framebuffer || w == 0 ||
         h == 0 || w > INT_MAX || h > INT_MAX){
         return false;
     }
@@ -44,8 +44,8 @@ bool render_scene(const Scene *scene, RenderMode mode, ColorRGB *framebuffer) {
 
     for (size_t y = 0; y < h; y++) {
         for (size_t x = 0; x < w; x++) {
-            Ray ray = create_primary_ray(scene->eye, 
-                &scene->window,(int)w, 
+            Ray ray = create_primary_ray(scene->eye,
+                &scene->window,(int)w,
                 (int)h, (int)x, (int)y);
 
             HitRecord hit;

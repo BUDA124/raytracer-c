@@ -25,7 +25,6 @@ int main(int argc, char *argv[]) {
     RenderMode mode = RENDER_FLAT;
     bool no_display = false;
 
-    /* Parse arguments. */
     scene_file = argv[1];
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--mode") == 0) {
@@ -65,7 +64,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    /* Load scene. */
     Scene scene = {0};
     char error_msg[512];
     if (!load_scene(scene_file, &scene, error_msg, sizeof(error_msg))) {
@@ -76,7 +74,6 @@ int main(int argc, char *argv[]) {
     fprintf(stderr, "Scene loaded: %zux%zu, %zu objects\n",
             scene.width, scene.height, scene.object_count);
 
-    /* Render. */
     if (scene.width > SIZE_MAX / scene.height ||
         scene.width * scene.height > SIZE_MAX / sizeof(ColorRGB)) {
         fprintf(stderr, "Error: Image dimensions are too large.\n");
@@ -93,7 +90,6 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "Render complete.\n");
 
-    /* Save image. */
     if (!save_avs_image(output_file, framebuffer, scene.width, scene.height)) {
         fprintf(stderr, "Error: Failed to save image to '%s'.\n", output_file);
         free(framebuffer);
@@ -103,15 +99,13 @@ int main(int argc, char *argv[]) {
 
     fprintf(stderr, "Image saved to '%s'.\n", output_file);
 
-    /* Clean up render resources. */
     free(framebuffer);
     free_scene(&scene);
 
-    /* Display unless disabled. */
     if (!no_display) {
         if (!display_image(output_file)) {
             fprintf(stderr, "Warning: Could not launch image viewer.\n");
-            /* Image was saved successfully, so don't return failure. */
+
         }
     }
 

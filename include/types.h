@@ -10,7 +10,7 @@ typedef struct { double r, g, b; } ColorRGB;
 
 typedef struct {
     Point3 origin;
-    Vector3 direction; /* Unit vector. */
+    Vector3 direction;
 } Ray;
 
 typedef struct {
@@ -24,8 +24,8 @@ typedef struct { Point3 center; double radius; } Sphere;
 typedef struct {
     size_t vertex_count;
     Point3 *vertices;
-    Vector3 outward_normal; /* Unit normal determined by vertex order. */
-    size_t dropped_axis;    /* 0: X, 1: Y, 2: Z. */
+    Vector3 outward_normal;
+    size_t dropped_axis;
 } Polygon;
 
 typedef enum { OBJ_SPHERE, OBJ_POLYGON } ObjectType;
@@ -39,7 +39,7 @@ typedef struct {
 typedef struct {
     double t;
     Point3 point;
-    Vector3 normal; /* Unit normal opposing the incoming ray. */
+    Vector3 normal;
     bool front_face;
     Material material;
 } HitRecord;
@@ -47,7 +47,7 @@ typedef struct {
 typedef struct {
     Point3 position;
     ColorRGB intensity;
-    double c1, c2, c3; /* Distance attenuation coefficients. */
+    double c1, c2, c3;
 } Light;
 typedef struct { double x_min, y_min, x_max, y_max; } ViewWindow;
 

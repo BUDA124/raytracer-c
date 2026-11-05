@@ -2,8 +2,6 @@
 #include "numeric.h"
 #include <math.h>
 
-/* Vector operations */
-
 Vector3 vec3_create(double x, double y, double z) {
     Vector3 v = {x, y, z};
     return v;
@@ -46,7 +44,7 @@ Vector3 vec3_normalize(Vector3 v) {
 }
 
 Vector3 vec3_reflect(Vector3 incident, Vector3 normal) {
-    /* reflect(I, N) = I - 2*(I.N)*N */
+
     double d = vec3_dot(incident, normal);
     return vec3_sub(incident, vec3_scale(normal, 2.0 * d));
 }

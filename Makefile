@@ -23,11 +23,11 @@ run_p2: $(TARGET)
 
 run_p3_1: $(TARGET)
 	mkdir -p images
-	./$(TARGET) scenes/p3_1.scene --mode phong --output images/p3_1.avs
+	./$(TARGET) scenes/P3_1.scene --mode phong --output images/p3_1.avs
 
 run_p3_2: $(TARGET)
 	mkdir -p images
-	./$(TARGET) scenes/p3_2.scene --mode phong --output images/p3_2.avs
+	./$(TARGET) scenes/P3_2.scene --mode phong --output images/p3_2.avs
 
 clean:
 	rm -f $(OBJ) $(DEP) $(TARGET)

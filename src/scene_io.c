@@ -11,38 +11,29 @@
 #include <errno.h>
 #include <stdint.h>
 
-
 #define MAX_LINE_LENGTH 1024
 #define INITIAL_OBJECT_CAPACITY 16
 
-/* ------------------------------------------------------------------ */
-/*  Helpers                                                           */
-/* ------------------------------------------------------------------ */
-
-/* Strip comments and trailing whitespace in place. */
 static void strip_comment(char *line) {
     char *p = strchr(line, '#');
     if (p) *p = '\0';
-    /* Trim trailing whitespace. */
+
     size_t len = strlen(line);
     while (len > 0 && isspace((unsigned char)line[len - 1])) {
         line[--len] = '\0';
     }
 }
 
-/* Skip leading whitespace and return pointer to first non-space. */
 static const char *skip_spaces(const char *s) {
     while (*s && isspace((unsigned char)*s)) s++;
     return s;
 }
 
-/* Check that a string is empty (only whitespace) after stripping. */
 static bool is_blank(const char *s) {
     s = skip_spaces(s);
     return *s == '\0';
 }
 
-/* Parse a double from string, advancing *pos past it. Returns false on failure. */
 static bool parse_double(const char **pos, double *out) {
     const char *start = skip_spaces(*pos);
     if (*start == '\0') return false;
@@ -56,11 +47,10 @@ static bool parse_double(const char **pos, double *out) {
     return true;
 }
 
-/* Parse a size_t (positive integer) from string. */
 static bool parse_size(const char **pos, size_t *out) {
     const char *start = skip_spaces(*pos);
     if (*start == '\0') return false;
-    /* Reject negative. */
+
     if (*start == '-') return false;
 
     char *end;
@@ -78,12 +68,10 @@ static bool validate_color(double r, double g, double b) {
            b >= 0.0 && b <= 1.0;
 }
 
-/* Ensure nothing follows after parsed tokens (except whitespace). */
 static bool expect_end(const char *pos) {
     return is_blank(pos);
 }
 
-/* Add an object, growing the array if needed. */
 static bool add_object(Object **objects, size_t *count, size_t *capacity,
                        const Object *obj) {
     if (*count >= *capacity) {
@@ -98,10 +86,6 @@ static bool add_object(Object **objects, size_t *count, size_t *capacity,
     (*count)++;
     return true;
 }
-
-/* ------------------------------------------------------------------ */
-/*  free_scene                                                        */
-/* ------------------------------------------------------------------ */
 
 void free_scene(Scene *scene) {
     if (!scene) return;
@@ -119,13 +103,8 @@ void free_scene(Scene *scene) {
         free(scene->lights);
     }
 
-    /* Zero the entire structure so it can be freed again safely. */
     memset(scene, 0, sizeof(Scene));
 }
-
-/* ------------------------------------------------------------------ */
-/*  load_scene                                                        */
-/* ------------------------------------------------------------------ */
 
 bool load_scene(const char *filename, Scene *out_scene,
                 char *error_message, size_t error_capacity) {
@@ -135,7 +114,6 @@ bool load_scene(const char *filename, Scene *out_scene,
         return false;
     }
 
-    /* Require out_scene to be zeroed. */
     FILE *fp = fopen(filename, "r");
     if (!fp) {
         snprintf(error_message, error_capacity,
@@ -143,7 +121,6 @@ bool load_scene(const char *filename, Scene *out_scene,
         return false;
     }
 
-    /* Temporary scene built during parsing. */
     Scene tmp = {0};
     bool has_window = false, has_eye = false, has_res = false;
     bool has_bg = false, has_ambient = false;
@@ -158,7 +135,6 @@ bool load_scene(const char *filename, Scene *out_scene,
     while (fgets(line_buf, sizeof(line_buf), fp)) {
         line_num++;
 
-        /* Detect truncated lines (line too long for buffer). */
         size_t line_len = strlen(line_buf);
         if (line_len > 0 && line_buf[line_len - 1] != '\n' && !feof(fp)) {
             snprintf(error_message, error_capacity,
@@ -173,7 +149,6 @@ bool load_scene(const char *filename, Scene *out_scene,
 
         const char *pos = skip_spaces(line_buf);
 
-        /* Extract the directive keyword. */
         char keyword[32];
         int kw_len = 0;
         while (*pos && !isspace((unsigned char)*pos) && kw_len < 31) {
@@ -183,7 +158,6 @@ bool load_scene(const char *filename, Scene *out_scene,
 
         if (kw_len == 0) continue;
 
-        /* --- WINDOW --- */
         if (strcmp(keyword, "WINDOW") == 0) {
             if (has_window) {
                 snprintf(error_message, error_capacity,
@@ -218,7 +192,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             tmp.window.y_max = ymax;
             has_window = true;
         }
-        /* --- EYE --- */
+
         else if (strcmp(keyword, "EYE") == 0) {
             if (has_eye) {
                 snprintf(error_message, error_capacity,
@@ -252,7 +226,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             tmp.eye.z = z;
             has_eye = true;
         }
-        /* --- RES --- */
+
         else if (strcmp(keyword, "RES") == 0) {
             if (has_res) {
                 snprintf(error_message, error_capacity,
@@ -273,7 +247,7 @@ bool load_scene(const char *filename, Scene *out_scene,
                 success = false;
                 break;
             }
-            /* Check AVS representability (uint32_t max). */
+
             if (w > (size_t)UINT32_MAX || h > (size_t)UINT32_MAX) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: RES dimensions exceed AVS limits", line_num);
@@ -284,7 +258,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             tmp.height = h;
             has_res = true;
         }
-        /* --- BG --- */
+
         else if (strcmp(keyword, "BG") == 0) {
             if (has_bg) {
                 snprintf(error_message, error_capacity,
@@ -318,7 +292,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             tmp.background_color.b = b;
             has_bg = true;
         }
-        /* --- AMBIENT --- */
+
         else if (strcmp(keyword, "AMBIENT") == 0) {
             if (has_ambient) {
                 snprintf(error_message, error_capacity,
@@ -353,7 +327,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             tmp.ambient_light.b = b;
             has_ambient = true;
         }
-        /* --- SPHERE --- */
+
         else if (strcmp(keyword, "SPHERE") == 0) {
             double x, y, z, radius, r, g, b;
             if (!parse_double(&pos, &x) || !parse_double(&pos, &y) ||
@@ -367,12 +341,11 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
 
-            /* Try parsing extended form: ka kd ks shininess */
             double ka = 0.1, kd = 0.7, ks = 0.0, shininess = 32.0;
             const char *saved_pos = pos;
             double maybe_ka;
             if (parse_double(&pos, &maybe_ka)) {
-                /* Extended form detected. */
+
                 double maybe_kd, maybe_ks, maybe_shin;
                 if (!parse_double(&pos, &maybe_kd) ||
                     !parse_double(&pos, &maybe_ks) ||
@@ -447,10 +420,10 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
         }
-        /* --- LIGHT --- */
+
         else if (strcmp(keyword, "LIGHT") == 0) {
             double lx, ly, lz, lr, lg, lb;
-            /* Six-value legacy form defaults to constant attenuation. */
+
             double c1 = 1.0, c2 = 0.0, c3 = 0.0;
             if (!parse_double(&pos, &lx) || !parse_double(&pos, &ly) ||
                 !parse_double(&pos, &lz) || !parse_double(&pos, &lr) ||
@@ -519,8 +492,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             light->c3 = c3;
             tmp.light_count = new_count;
         }
-        
-/* --- POLYGON --- */
+
         else if (strcmp(keyword, "POLYGON") == 0) {
             size_t vertex_count;
             double r, g, b, ka, kd, ks, shininess;
@@ -572,7 +544,6 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
 
-            /* Read the polygon vertices from the following lines. */
             for (size_t i = 0; i < vertex_count; ) {
                 if (!fgets(line_buf, sizeof(line_buf), fp)) {
                     snprintf(error_message, error_capacity,
@@ -619,7 +590,6 @@ bool load_scene(const char *filename, Scene *out_scene,
                 ++i;
             }
 
-            /* Prepare the polygon after reading all its vertices. */
             if (success && !prepare_polygon(&polygon, error_message,
                                             error_capacity)) {
                 char detail[128];
@@ -638,7 +608,6 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
 
-            /* Create the scene object. */
             Object obj;
             memset(&obj, 0, sizeof(obj));
 
@@ -664,7 +633,6 @@ bool load_scene(const char *filename, Scene *out_scene,
             }
         }
 
-        /* --- Unknown directive --- */
         else {
             snprintf(error_message, error_capacity,
                      "Line %zu: Unknown directive '%s'", line_num, keyword);
@@ -675,7 +643,6 @@ bool load_scene(const char *filename, Scene *out_scene,
 
     fclose(fp);
 
-    /* Verify mandatory directives. */
     if (success && !has_window) {
         snprintf(error_message, error_capacity,
                  "Missing mandatory WINDOW directive");
@@ -698,7 +665,7 @@ bool load_scene(const char *filename, Scene *out_scene,
     }
 
     if (!success) {
-        /* Free vertices belonging to polygons already added. */
+
         for (size_t i = 0; i < obj_count; i++) {
             if (objects[i].type == OBJ_POLYGON) {
                 free(objects[i].geo.polygon.vertices);
@@ -712,7 +679,6 @@ bool load_scene(const char *filename, Scene *out_scene,
         return false;
     }
 
-    /* Transfer to output scene. */
     tmp.objects = objects;
     tmp.object_count = obj_count;
     *out_scene = tmp;
