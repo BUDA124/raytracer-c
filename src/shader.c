@@ -1,6 +1,7 @@
 #include "shader.h"
 #include "vector3.h"
 #include "intersect.h"
+#include "texture.h"
 #include "numeric.h"
 #include <math.h>
 
@@ -120,11 +121,11 @@ static double specular_power(double R_dot_V, double Kn) {
 
 /*
  * Base color of the surface at P. Objects flagged with a texture take the
- * texel from the texture mapping stage; until that stage provides (u, v)
- * coordinates, the object's own color is used.
+ * texel from the texture mapping stage; otherwise the object's own color
+ * is used.
  */
-static ColorRGB object_color(const HitRecord *hit) {
-    return hit->material.color;
+static ColorRGB object_color(const HitRecord *hit, const Scene *scene) {
+    return evaluate_object_color(hit, scene);
 }
 
 /*
@@ -211,7 +212,7 @@ static ColorRGB shade_intersection(const Ray *ray, const HitRecord *hit,
     }
 
     /* Local color: color = I * Q.color. */
-    ColorRGB base = object_color(hit);
+    ColorRGB base = object_color(hit, scene);
     ColorRGB color = { base.r * I, base.g * I, base.b * I };
 
     /*

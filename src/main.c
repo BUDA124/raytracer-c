@@ -11,7 +11,8 @@
 static void print_usage(const char *prog) {
     fprintf(stderr,
             "Usage: %s <scene_file> [--mode flat|phong] "
-            "[--output <file.avs>] [--no-display]\n", prog);
+            "[--output <file.avs>] [--aa <1..8>] [--depth <0..32>] "
+            "[--no-display]\n", prog);
 }
 
 int main(int argc, char *argv[]) {
@@ -20,12 +21,13 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    const char *scene_file = NULL;
+    const char *scene_file = argv[1];
     const char *output_file = "output.avs";
-    RenderMode mode = RENDER_FLAT;
+    RenderMode mode = RENDER_PHONG;
     bool no_display = false;
+    int aa_override = 0;
+    int depth_override = -1;
 
-    scene_file = argv[1];
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--mode") == 0) {
             if (i + 1 >= argc) {
@@ -49,6 +51,32 @@ int main(int argc, char *argv[]) {
             }
             i++;
             output_file = argv[i];
+        } else if (strcmp(argv[i], "--aa") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --aa requires an integer argument.\n");
+                return EXIT_FAILURE;
+            }
+            i++;
+            char *end = NULL;
+            long val = strtol(argv[i], &end, 10);
+            if (!end || *end != '\0' || val < 1 || val > 8) {
+                fprintf(stderr, "Error: --aa must be an integer in [1, 8].\n");
+                return EXIT_FAILURE;
+            }
+            aa_override = (int)val;
+        } else if (strcmp(argv[i], "--depth") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --depth requires an integer argument.\n");
+                return EXIT_FAILURE;
+            }
+            i++;
+            char *end = NULL;
+            long val = strtol(argv[i], &end, 10);
+            if (!end || *end != '\0' || val < 0 || val > 32) {
+                fprintf(stderr, "Error: --depth must be an integer in [0, 32].\n");
+                return EXIT_FAILURE;
+            }
+            depth_override = (int)val;
         } else if (strcmp(argv[i], "--no-display") == 0) {
             no_display = true;
         } else {
@@ -58,12 +86,6 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (!scene_file) {
-        fprintf(stderr, "Error: No scene file specified.\n");
-        print_usage(argv[0]);
-        return EXIT_FAILURE;
-    }
-
     Scene scene = {0};
     char error_msg[512];
     if (!load_scene(scene_file, &scene, error_msg, sizeof(error_msg))) {
@@ -71,8 +93,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "Scene loaded: %zux%zu, %zu objects\n",
-            scene.width, scene.height, scene.object_count);
+    if (aa_override > 0) {
+        scene.aa_samples = aa_override;
+    }
+    if (depth_override >= 0) {
+        scene.max_depth = depth_override;
+    }
 
     if (scene.width > SIZE_MAX / scene.height ||
         scene.width * scene.height > SIZE_MAX / sizeof(ColorRGB)) {
@@ -80,6 +106,7 @@ int main(int argc, char *argv[]) {
         free_scene(&scene);
         return EXIT_FAILURE;
     }
+
     ColorRGB *framebuffer = malloc(scene.width * scene.height * sizeof(ColorRGB));
     if (!framebuffer || !render_scene(&scene, mode, framebuffer)) {
         fprintf(stderr, "Error: Rendering failed.\n");
@@ -88,8 +115,6 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "Render complete.\n");
-
     if (!save_avs_image(output_file, framebuffer, scene.width, scene.height)) {
         fprintf(stderr, "Error: Failed to save image to '%s'.\n", output_file);
         free(framebuffer);
@@ -97,15 +122,12 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    fprintf(stderr, "Image saved to '%s'.\n", output_file);
-
     free(framebuffer);
     free_scene(&scene);
 
     if (!no_display) {
         if (!display_image(output_file)) {
             fprintf(stderr, "Warning: Could not launch image viewer.\n");
-
         }
     }
 

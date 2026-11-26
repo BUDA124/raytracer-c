@@ -1,0 +1,167 @@
+# PR04-CG - ESCENA 1: EL OBSERVATORIO ASTRONOMICO DE CRISTAL
+# Demuestra los 22 elementos obligatorios del proyecto:
+# - Codigo general (1300x760, .avs, despliegue ImageMagick)
+# - Esferas (planeta texturizado, esfera hueca recortada, nucleo dorado, cristal transparente, cromo)
+# - Poligonos (piso de marmol texturizado, muro estelar texturizado, espejos en V, panel de vidrio)
+# - Discos (anillo planetario translucido con radio interno, bases/capiteles de columnas, aro de pedestal)
+# - Elipses (espejo eliptico flotante y placa eliptica translucida inclinada)
+# - Cilindros (dos columnas clasicas acanaladas con textura cilindrica)
+# - Conos (aguja ornamental con textura conica .avs y cono truncado/recortado hueco)
+# - Superficies Cuadraticas (hiperboloide de una hoja como pedestal central acotado con planos de corte)
+# - Planos de Corte (esfera hueca seccionada, hiperboloide acotado, cono recortado oblicuamente)
+# - Luces blancas multiples, intensidad, atenuacion, difusa, especular, sombras opacas y translucidas
+# - Espejos (muros espejo, piso reflejante, esfera cromada, espejo eliptico)
+# - Transparencia no refractiva (esfera de cristal, panel de vidrio, anillo y elipse translucidos)
+# - Antialiasing (AA 2)
+# - Texturas en Poligonos, Cilindros, Esferas y Conos (.ppm y .avs)
+
+WINDOW -8.0 -4.677 8.0 4.677
+EYE 0.0 2.1 -14.5
+LOOKAT 0.0 0.35 10.5 0.0 1.0 0.0
+RES 1300 760
+DEPTH 5
+AA 2
+
+BG 0.025 0.040 0.085
+AMBIENT 0.25 0.25 0.25
+
+# 3 luces blancas puntuales con atenuacion suave (sin luces de colores)
+LIGHT -7.5 8.5  2.0 0.94 0.94 0.94 1.0 0.007 0.0
+LIGHT  8.5 7.4  3.0 0.78 0.78 0.78 1.0 0.009 0.0
+LIGHT  0.0 9.5 14.5 0.58 0.58 0.58 1.0 0.013 0.0
+
+# Texturas (1-based: 1..5)
+TEXTURE 1 textures/marble_floor.ppm
+TEXTURE 2 textures/observatory_wall.ppm
+TEXTURE 3 textures/planet_earth.ppm
+TEXTURE 4 textures/marble_column.ppm
+TEXTURE 5 textures/cone_ornament.avs
+
+# ============================================================================
+# ARQUITECTURA: PISO DE MARMOL REFLEJANTE + MUROS + TECHO + ESPEJOS LATERALES
+# ============================================================================
+
+# Piso unico texturizado con mosaico de marmol + reflejo pulido (Textura en Poligono + Espejo)
+POLYGON 4 1.0 1.0 1.0 0.22 0.78 0.45 65.0 0.72 0.28 0.00 1
+-16.0 -2.5 -18.0
+ 16.0 -2.5 -18.0
+ 16.0 -2.5  24.0
+-16.0 -2.5  24.0
+MAP_POLY -16.0 -2.5 -2.0 1.0 0.0 0.0 0.0 0.0 1.0 5.5 5.5 repeat
+
+# Muro posterior del observatorio con carta celeste (Textura en Poligono)
+POLYGON 4 1.0 1.0 1.0 0.34 0.76 0.12 20.0 1.00 0.00 0.00 2
+-12.5 -2.5 19.5
+ 12.5 -2.5 19.5
+ 12.5  8.8 19.5
+-12.5  8.8 19.5
+MAP_POLY -12.5 -2.5 19.5 1.0 0.0 0.0 0.0 1.0 0.0 25.0 11.3 clamp
+
+# Muro trasero detras de la camara para enriquecer reflejos en espejos y esfera cromada
+POLYGON 4 1.0 1.0 1.0 0.36 0.72 0.10 16.0 1.00 0.00 0.00 2
+ 16.0 -2.5 -18.0
+-16.0 -2.5 -18.0
+-16.0  9.5 -18.0
+ 16.0  9.5 -18.0
+MAP_POLY -16.0 -2.5 -18.0 1.0 0.0 0.0 0.0 1.0 0.0 32.0 12.0 clamp
+
+# Techo abovedado oscuro del observatorio
+POLYGON 4 0.08 0.12 0.24 0.35 0.65 0.12 18.0 1.00 0.00 0.00 0
+-16.0  9.0  24.0
+ 16.0  9.0  24.0
+ 16.0  9.0 -18.0
+-16.0  9.0 -18.0
+
+# Espejo monumental izquierdo en angulo (Espejo O2 = 0.90)
+POLYGON 4 0.78 0.84 0.92 0.06 0.18 0.75 110.0 0.10 0.90 0.00 0
+-12.0 -2.5 10.5
+ -7.2 -2.5 17.8
+ -7.2  6.4 17.8
+-12.0  6.4 10.5
+
+# Espejo monumental derecho en angulo (Espejo O2 = 0.90)
+POLYGON 4 0.78 0.84 0.92 0.06 0.18 0.75 110.0 0.10 0.90 0.00 0
+  7.2 -2.5 17.8
+ 12.0 -2.5 10.5
+ 12.0  6.4 10.5
+  7.2  6.4 17.8
+
+# ============================================================================
+# COLUMNAS CLASICAS ACANALADAS (CILINDROS CON TEXTURA + DISCOS/ANILLOS)
+# ============================================================================
+
+# Columna izquierda (Textura en Cilindro)
+CYLINDER -6.6 -2.5 13.8 0.0 1.0 0.0 0.78 0.0 7.2 1.0 1.0 1.0 0.22 0.80 0.35 40.0 0.92 0.08 0.00 4
+DISK -6.6 -2.48 13.8 0.0 1.0 0.0 1.08 0.0 0.76 0.62 0.32 0.20 0.72 0.65 70.0 0.78 0.22 0.00 0
+DISK -6.6  4.72 13.8 0.0 1.0 0.0 1.08 0.0 0.76 0.62 0.32 0.20 0.72 0.65 70.0 0.78 0.22 0.00 0
+
+# Columna derecha (Textura en Cilindro)
+CYLINDER  6.6 -2.5 13.8 0.0 1.0 0.0 0.78 0.0 7.2 1.0 1.0 1.0 0.22 0.80 0.35 40.0 0.92 0.08 0.00 4
+DISK  6.6 -2.48 13.8 0.0 1.0 0.0 1.08 0.0 0.76 0.62 0.32 0.20 0.72 0.65 70.0 0.78 0.22 0.00 0
+DISK  6.6  4.72 13.8 0.0 1.0 0.0 1.08 0.0 0.76 0.62 0.32 0.20 0.72 0.65 70.0 0.78 0.22 0.00 0
+
+# ============================================================================
+# PIEZA CENTRAL: PEDESTAL HIPERBOLOIDE (CUADRATICA + CLIP) + GLOBO PLANETARIO
+# ============================================================================
+
+# Hiperboloide de una hoja dorado-bronce centrado en (0, -1.65, 11.0)
+# (x^2 + (z-11)^2)/0.72^2 - (y+1.65)^2/0.85^2 = 1
+QUADRIC 1.92901235 -1.38408305 1.92901235 0.0 0.0 0.0 0.0 -2.28373702 -21.21913580 228.64232774 0.88 0.68 0.30 0.20 0.74 0.88 90.0 0.72 0.28 0.00 0
+CLIP 0.0  1.0 0.0  2.50
+CLIP 0.0 -1.0 0.0 -0.80
+
+# Aro superior del pedestal (Disco con radio interno dejando ver el interior del hiperboloide)
+DISK 0.0 -0.80 11.0 0.0 1.0 0.0 1.15 0.86 0.90 0.72 0.34 0.20 0.74 0.80 90.0 0.75 0.25 0.00 0
+
+# Globo planetario terrestre despejado y brillante (Textura en Esfera)
+SPHERE 0.0 1.55 11.0 1.65 1.0 1.0 1.0 0.28 0.84 0.40 45.0 0.94 0.06 0.00 3
+
+# Anillo planetario translucido inclinado (Disco con radio interno + Transparencia no refractiva)
+DISK 0.0 1.55 11.0 -0.18 0.90 -0.40 2.85 2.02 0.94 0.82 0.50 0.24 0.68 0.60 65.0 0.42 0.10 0.48 0
+
+# ============================================================================
+# LADO IZQUIERDO: ESFERA HUECA RECORTADA (CLIP) + NUCLEO + CRISTAL + ELIPSE
+# ============================================================================
+
+# Esfera azul cobalto seccionada por plano diagonal mostrando interior hueco (Esfera + CLIP)
+SPHERE -4.2 -0.85 9.6 1.62 0.16 0.40 0.82 0.20 0.82 0.68 75.0 0.82 0.18 0.00 0
+CLIP -0.45 -0.52 0.72 -8.395
+
+# Nucleo dorado reflejante suspendido dentro de la esfera hueca
+SPHERE -4.2 -0.85 9.6 0.72 0.96 0.76 0.28 0.20 0.74 0.92 100.0 0.55 0.45 0.00 0
+
+# Peana circular bajo la esfera recortada (Disco)
+DISK -4.2 -2.47 9.6 0.0 1.0 0.0 1.28 0.0 0.22 0.26 0.35 0.20 0.75 0.55 50.0 0.80 0.20 0.00 0
+
+# Esfera de cristal transparente en primer plano izquierdo (Transparencia no refractiva + sombra atenuada)
+SPHERE -2.35 -1.45 6.4 1.05 0.52 0.84 1.00 0.12 0.48 0.95 100.0 0.20 0.10 0.70 0
+
+# Medallon eliptico espejo flotando arriba a la izquierda (Elipse + Espejo)
+ELLIPSE -4.2 2.75 11.2 0.34 -0.14 -0.93 0.93 0.05 0.34 1.45 0.88 0.86 0.89 0.95 0.08 0.22 0.85 100.0 0.14 0.86 0.00 0
+
+# ============================================================================
+# LADO DERECHO: CONOS TEXTURIZADOS (.AVS) + CONO RECORTADO + ELIPSE + CRISTAL
+# ============================================================================
+
+# Aguja / reloj de sol conico principal (Cono + Textura en Conos desde .avs)
+CONE 4.45 2.15 10.6 0.0 -1.0 0.0 17.5 0.0 4.65 1.0 1.0 1.0 0.24 0.82 0.42 50.0 0.92 0.08 0.00 5
+
+# Base circular para el cono principal (Disco)
+DISK 4.45 -2.48 10.6 0.0 1.0 0.0 1.65 0.0 0.82 0.66 0.30 0.20 0.74 0.70 80.0 0.75 0.25 0.00 0
+
+# Cono inclinado truncado y recortado separado limpiamente mostrando textura y hueco (Cono + CLIP)
+CONE 2.15 -2.25 8.5 -0.45 0.89 0.0 20.0 0.45 2.45 1.0 1.0 1.0 0.24 0.82 0.45 55.0 0.90 0.10 0.00 5
+CLIP 0.0 0.0 1.0 -8.35
+
+# Esfera cromada espejo en primer plano derecho (Espejo O2 = 0.90)
+SPHERE 2.45 -1.52 5.9 0.98 0.88 0.90 0.94 0.06 0.22 0.95 110.0 0.10 0.90 0.00 0
+
+# Elipse translucida dorada inclinada flotando arriba a la derecha (Elipse + Transparencia)
+ELLIPSE 3.85 2.95 11.4 -0.25 0.18 -0.95 0.94 0.12 -0.22 1.38 0.78 0.96 0.78 0.34 0.16 0.50 0.85 90.0 0.28 0.10 0.62 0
+
+# Panel de vidrio ambar vertical en primer plano derecho (Transparencia no refractiva)
+POLYGON 4 0.98 0.72 0.30 0.12 0.45 0.88 95.0 0.26 0.08 0.66 0
+ 4.85 -2.50 6.8
+ 6.95 -2.50 8.0
+ 6.95  1.50 8.0
+ 4.85  1.50 6.8

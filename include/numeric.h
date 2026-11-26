@@ -8,4 +8,8 @@
 #define SHADOW_T_MIN 1e-5
 #define GEOMETRY_EPSILON 1e-8
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 #endif
