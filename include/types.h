@@ -17,6 +17,10 @@ typedef struct {
     ColorRGB color;
     double ka, kd, ks;
     double shininess;
+    /* Color mixing weights (O1 + O2 + O3 = 1): own color, mirror, transparency. */
+    double o1, o2, o3;
+    /* 0 = use the base color; > 0 = index of the texture to sample. */
+    int texture;
 } Material;
 
 typedef struct { Point3 center; double radius; } Sphere;
@@ -61,6 +65,7 @@ typedef struct {
     Object *objects;
     size_t light_count;
     Light *lights;
+    int max_depth; /* Recursion levels for mirror and transparency rays. */
 } Scene;
 
 typedef enum { RENDER_FLAT, RENDER_PHONG } RenderMode;

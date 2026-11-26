@@ -44,6 +44,9 @@ make
 # P3: Phong shading
 ./raytracer scenes/P3_1.scene --mode phong --output images/p3_1.avs
 ./raytracer scenes/P3_2.scene --mode phong --output images/p3_2.avs
+
+#Test of mirrors:
+./raytracer scenes/sala_cristal.scene --mode phong --output images/pcristal_1.avs
 ```
 
 ### Makefile targets
@@ -64,9 +67,12 @@ RES width height
 BG r g b                                    # Optional, default (0,0,0)
 AMBIENT r g b                               # Optional, default (0,0,0)
 LIGHT x y z r g b                           # Repeatable
+DEPTH n                                     # Optional (P4), mirror/transparency recursion levels in [0, 32], default 5
 SPHERE x y z radius r g b                   # Short form (P2)
 SPHERE x y z radius r g b ka kd ks shin     # Long form (P3)
+SPHERE x y z radius r g b ka kd ks shin o1 o2 o3 [texture]     # Long form (P4)
 POLYGON vertex_count r g b ka kd ks shin    # P3 only
+POLYGON vertex_count r g b ka kd ks shin o1 o2 o3 [texture]    # Long form (P4)
 x0 y0 z0
 x1 y1 z1
 ...
@@ -85,4 +91,5 @@ x1 y1 z1
 ## Project Status
 
 - [x] P2: Flat color rendering of 8+ spheres at 1300x760
-- [ ] P3: Phong shading with polygons at 1300x760
+- [x] P3: Phong shading with polygons at 1300x760
+- [ ] P4: Advanced ray tracing at 1300x760: diffuse illumination, light intensity, multiple lights, shadows, specular reflection, mirrors, non-refractive transparency, anti-aliasing, cylinders, cones, discs, ellipses, cutting planes, quadric surfaces, and textures on polygons, cylinders and spheres

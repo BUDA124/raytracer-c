@@ -10,9 +10,12 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdint.h>
+#include <limits.h>
 
 #define MAX_LINE_LENGTH 1024
 #define INITIAL_OBJECT_CAPACITY 16
+#define DEFAULT_MAX_DEPTH 5
+#define MAX_ALLOWED_DEPTH 32
 
 static void strip_comment(char *line) {
     char *p = strchr(line, '#');
@@ -59,6 +62,51 @@ static bool parse_size(const char **pos, size_t *out) {
     if (end == start || errno == ERANGE || val == 0) return false;
     *out = (size_t)val;
     *pos = end;
+    return true;
+}
+
+/* Parses a base-10 integer token. The token must end at whitespace or at
+ * the end of the line, so values such as "5.5" or "5x" are rejected. */
+static bool parse_int(const char **pos, long *out) {
+    const char *start = skip_spaces(*pos);
+    if (*start == '\0') return false;
+
+    char *end;
+    errno = 0;
+    long val = strtol(start, &end, 10);
+    if (end == start || errno == ERANGE) return false;
+    if (*end != '\0' && !isspace((unsigned char)*end)) return false;
+    *out = val;
+    *pos = end;
+    return true;
+}
+
+/* Parses up to max_count optional numbers and returns how many were read.
+ * The position is left just after the last number successfully parsed. */
+static size_t parse_optional_doubles(const char **pos, double *out,
+                                     size_t max_count) {
+    size_t count = 0;
+    while (count < max_count && parse_double(pos, &out[count])) {
+        count++;
+    }
+    return count;
+}
+
+/* The color mixing weights must each lie in [0, 1] and add up to 1. */
+static bool validate_mix(double o1, double o2, double o3) {
+    if (o1 < 0.0 || o1 > 1.0 || o2 < 0.0 || o2 > 1.0 ||
+        o3 < 0.0 || o3 > 1.0) {
+        return false;
+    }
+    return fabs(o1 + o2 + o3 - 1.0) <= 1e-6;
+}
+
+/* A texture index is a non-negative integer; 0 means no texture. */
+static bool to_texture_index(double value, int *out) {
+    if (value < 0.0 || value != floor(value) || value > (double)INT_MAX) {
+        return false;
+    }
+    *out = (int)value;
     return true;
 }
 
@@ -123,7 +171,10 @@ bool load_scene(const char *filename, Scene *out_scene,
 
     Scene tmp = {0};
     bool has_window = false, has_eye = false, has_res = false;
-    bool has_bg = false, has_ambient = false;
+    bool has_bg = false, has_ambient = false, has_depth = false;
+
+    /* DEPTH is optional; this default applies when it is absent. */
+    tmp.max_depth = DEFAULT_MAX_DEPTH;
 
     Object *objects = NULL;
     size_t obj_count = 0, obj_capacity = 0;
@@ -328,6 +379,37 @@ bool load_scene(const char *filename, Scene *out_scene,
             has_ambient = true;
         }
 
+        else if (strcmp(keyword, "DEPTH") == 0) {
+            if (has_depth) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: Duplicate DEPTH directive", line_num);
+                success = false;
+                break;
+            }
+            long depth;
+            if (!parse_int(&pos, &depth)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: DEPTH requires an integer", line_num);
+                success = false;
+                break;
+            }
+            if (!expect_end(pos)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: DEPTH has extra tokens", line_num);
+                success = false;
+                break;
+            }
+            if (depth < 0 || depth > MAX_ALLOWED_DEPTH) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: DEPTH must be in [0, %d] (got %ld)",
+                         line_num, MAX_ALLOWED_DEPTH, depth);
+                success = false;
+                break;
+            }
+            tmp.max_depth = (int)depth;
+            has_depth = true;
+        }
+
         else if (strcmp(keyword, "SPHERE") == 0) {
             double x, y, z, radius, r, g, b;
             if (!parse_double(&pos, &x) || !parse_double(&pos, &y) ||
@@ -341,27 +423,40 @@ bool load_scene(const char *filename, Scene *out_scene,
                 break;
             }
 
+            /* Optional tail: ka kd ks shininess, then o1 o2 o3, then
+             * texture. Each group is only allowed after the previous one. */
             double ka = 0.1, kd = 0.7, ks = 0.0, shininess = 32.0;
-            const char *saved_pos = pos;
-            double maybe_ka;
-            if (parse_double(&pos, &maybe_ka)) {
+            double o1 = 1.0, o2 = 0.0, o3 = 0.0;
+            int texture = 0;
+            double extra[8];
+            size_t extra_count = parse_optional_doubles(&pos, extra, 8);
 
-                double maybe_kd, maybe_ks, maybe_shin;
-                if (!parse_double(&pos, &maybe_kd) ||
-                    !parse_double(&pos, &maybe_ks) ||
-                    !parse_double(&pos, &maybe_shin)) {
-                    snprintf(error_message, error_capacity,
-                             "Line %zu: SPHERE extended form requires "
-                             "ka kd ks shininess after color", line_num);
-                    success = false;
-                    break;
-                }
-                ka = maybe_ka;
-                kd = maybe_kd;
-                ks = maybe_ks;
-                shininess = maybe_shin;
-            } else {
-                pos = saved_pos;
+            if (extra_count != 0 && extra_count != 4 &&
+                extra_count != 7 && extra_count != 8) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: SPHERE requires 7, 11, 14 or 15 values "
+                         "(x y z radius r g b [ka kd ks shininess "
+                         "[o1 o2 o3 [texture]]])", line_num);
+                success = false;
+                break;
+            }
+            if (extra_count >= 4) {
+                ka = extra[0];
+                kd = extra[1];
+                ks = extra[2];
+                shininess = extra[3];
+            }
+            if (extra_count >= 7) {
+                o1 = extra[4];
+                o2 = extra[5];
+                o3 = extra[6];
+            }
+            if (extra_count == 8 && !to_texture_index(extra[7], &texture)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: SPHERE texture must be a non-negative "
+                         "integer", line_num);
+                success = false;
+                break;
             }
 
             if (!expect_end(pos)) {
@@ -396,6 +491,13 @@ bool load_scene(const char *filename, Scene *out_scene,
                 success = false;
                 break;
             }
+            if (!validate_mix(o1, o2, o3)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: SPHERE O1, O2, O3 must be in [0, 1] and "
+                         "O1 + O2 + O3 must equal 1", line_num);
+                success = false;
+                break;
+            }
 
             Object obj;
             memset(&obj, 0, sizeof(obj));
@@ -407,6 +509,10 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.material.kd = kd;
             obj.material.ks = ks;
             obj.material.shininess = shininess;
+            obj.material.o1 = o1;
+            obj.material.o2 = o2;
+            obj.material.o3 = o3;
+            obj.material.texture = texture;
             obj.geo.sphere.center.x = x;
             obj.geo.sphere.center.y = y;
             obj.geo.sphere.center.z = z;
@@ -502,10 +608,48 @@ bool load_scene(const char *filename, Scene *out_scene,
                 !parse_double(&pos, &r) || !parse_double(&pos, &g) ||
                 !parse_double(&pos, &b) || !parse_double(&pos, &ka) ||
                 !parse_double(&pos, &kd) || !parse_double(&pos, &ks) ||
-                !parse_double(&pos, &shininess) || !expect_end(pos)) {
+                !parse_double(&pos, &shininess)) {
 
                 snprintf(error_message, error_capacity,
                         "Line %zu: POLYGON requires vertex_count r g b ka kd ks shininess",
+                        polygon_line);
+                success = false;
+                break;
+            }
+
+            /* Optional tail: o1 o2 o3, then texture. */
+            double o1 = 1.0, o2 = 0.0, o3 = 0.0;
+            int texture = 0;
+            double extra[4];
+            size_t extra_count = parse_optional_doubles(&pos, extra, 4);
+
+            if ((extra_count != 0 && extra_count != 3 && extra_count != 4) ||
+                !expect_end(pos)) {
+
+                snprintf(error_message, error_capacity,
+                        "Line %zu: POLYGON requires 8, 11 or 12 values "
+                        "(vertex_count r g b ka kd ks shininess "
+                        "[o1 o2 o3 [texture]])",
+                        polygon_line);
+                success = false;
+                break;
+            }
+            if (extra_count >= 3) {
+                o1 = extra[0];
+                o2 = extra[1];
+                o3 = extra[2];
+            }
+            if (extra_count == 4 && !to_texture_index(extra[3], &texture)) {
+                snprintf(error_message, error_capacity,
+                        "Line %zu: POLYGON texture must be a non-negative integer",
+                        polygon_line);
+                success = false;
+                break;
+            }
+            if (!validate_mix(o1, o2, o3)) {
+                snprintf(error_message, error_capacity,
+                        "Line %zu: POLYGON O1, O2, O3 must be in [0, 1] and "
+                        "O1 + O2 + O3 must equal 1",
                         polygon_line);
                 success = false;
                 break;
@@ -618,6 +762,10 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.material.kd = kd;
             obj.material.ks = ks;
             obj.material.shininess = shininess;
+            obj.material.o1 = o1;
+            obj.material.o2 = o2;
+            obj.material.o3 = o3;
+            obj.material.texture = texture;
 
             obj.geo.polygon = polygon;
 
