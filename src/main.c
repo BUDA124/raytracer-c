@@ -1,6 +1,8 @@
 #include "types.h"
 #include "scene_io.h"
 #include "image_io.h"
+#include "geometry.h"
+#include "vector3.h"
 #include "ray.h"
 
 #include <stdio.h>
@@ -8,11 +10,143 @@
 #include <string.h>
 #include <stdint.h>
 
+#ifndef _WIN32
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/stat.h>
+#include <errno.h>
+#endif
+
 static void print_usage(const char *prog) {
     fprintf(stderr,
             "Usage: %s <scene_file> [--mode flat|phong] "
             "[--output <file.avs>] [--aa <1..8>] [--depth <0..32>] "
+            "[--frames <1..360>] [--output-dir <dir>] [--video <file.mp4>] "
+            "[--fps <1..120>] [--loops <1..32>] [--jobs <1..32>] "
             "[--no-display]\n", prog);
+}
+
+static bool parse_bounded_int(const char *arg, long min_v, long max_v,
+                              int *out_val) {
+    char *end = NULL;
+    long val = strtol(arg, &end, 10);
+    if (!end || *end != '\0' || val < min_v || val > max_v) {
+        return false;
+    }
+    *out_val = (int)val;
+    return true;
+}
+
+static bool render_animation_sequence(Scene *scene, RenderMode mode,
+                                      ColorRGB *framebuffer,
+                                      const char *output_dir,
+                                      int frame_count, int jobs) {
+#ifndef _WIN32
+    if (mkdir("images", 0775) != 0 && errno != EEXIST) {
+        /* Ignore if parent already exists or output_dir is custom */
+    }
+    if (mkdir(output_dir, 0775) != 0 && errno != EEXIST) {
+        fprintf(stderr, "Error: Cannot create directory '%s'.\n", output_dir);
+        return false;
+    }
+
+    int worker_count = (jobs > frame_count) ? frame_count : jobs;
+    if (worker_count < 1) worker_count = 1;
+
+    if (worker_count == 1) {
+        Vector3 prev_deltas[ANIM_ROLE_COUNT] = {{0}};
+        for (int f = 0; f < frame_count; f++) {
+            Vector3 target_deltas[ANIM_ROLE_COUNT];
+            compute_animation_deltas(scene, f, frame_count, target_deltas);
+            for (size_t i = 0; i < scene->object_count; i++) {
+                AnimRole role = scene->objects[i].anim_role;
+                Vector3 step = vec3_sub(target_deltas[role], prev_deltas[role]);
+                translate_object(&scene->objects[i], step);
+            }
+            for (int r = 0; r < ANIM_ROLE_COUNT; r++) {
+                prev_deltas[r] = target_deltas[r];
+            }
+
+            char frame_path[512];
+            snprintf(frame_path, sizeof(frame_path),
+                     "%s/frame_%03d.avs", output_dir, f);
+            if (!render_scene(scene, mode, framebuffer) ||
+                !save_avs_image(frame_path, framebuffer,
+                                scene->width, scene->height)) {
+                return false;
+            }
+            fprintf(stdout, "Rendered frame %d/%d -> %s\n",
+                    f + 1, frame_count, frame_path);
+            fflush(stdout);
+        }
+        return true;
+    }
+
+    pid_t *pids = malloc((size_t)worker_count * sizeof(pid_t));
+    if (!pids) return false;
+
+    for (int w = 0; w < worker_count; w++) {
+        pid_t pid = fork();
+        if (pid < 0) {
+            for (int k = 0; k < w; k++) {
+                waitpid(pids[k], NULL, 0);
+            }
+            free(pids);
+            return false;
+        }
+        if (pid == 0) {
+            free(pids);
+            Vector3 prev_deltas[ANIM_ROLE_COUNT] = {{0}};
+            for (int f = w; f < frame_count; f += worker_count) {
+                Vector3 target_deltas[ANIM_ROLE_COUNT];
+                compute_animation_deltas(scene, f, frame_count, target_deltas);
+                for (size_t i = 0; i < scene->object_count; i++) {
+                    AnimRole role = scene->objects[i].anim_role;
+                    Vector3 step = vec3_sub(target_deltas[role],
+                                            prev_deltas[role]);
+                    translate_object(&scene->objects[i], step);
+                }
+                for (int r = 0; r < ANIM_ROLE_COUNT; r++) {
+                    prev_deltas[r] = target_deltas[r];
+                }
+
+                char frame_path[512];
+                snprintf(frame_path, sizeof(frame_path),
+                         "%s/frame_%03d.avs", output_dir, f);
+                if (!render_scene(scene, mode, framebuffer) ||
+                    !save_avs_image(frame_path, framebuffer,
+                                    scene->width, scene->height)) {
+                    _exit(EXIT_FAILURE);
+                }
+                fprintf(stdout, "Rendered frame %d/%d -> %s\n",
+                        f + 1, frame_count, frame_path);
+                fflush(stdout);
+            }
+            _exit(EXIT_SUCCESS);
+        }
+        pids[w] = pid;
+    }
+
+    bool all_ok = true;
+    for (int w = 0; w < worker_count; w++) {
+        int status = 0;
+        if (waitpid(pids[w], &status, 0) < 0 ||
+            !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            all_ok = false;
+        }
+    }
+    free(pids);
+    return all_ok;
+#else
+    (void)scene;
+    (void)mode;
+    (void)framebuffer;
+    (void)output_dir;
+    (void)frame_count;
+    (void)jobs;
+    fprintf(stderr, "Error: Multi-frame animation requires POSIX.\n");
+    return false;
+#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -23,10 +157,16 @@ int main(int argc, char *argv[]) {
 
     const char *scene_file = argv[1];
     const char *output_file = "output.avs";
+    const char *output_dir = "images/frames_p4_2";
+    const char *video_file = NULL;
     RenderMode mode = RENDER_PHONG;
     bool no_display = false;
     int aa_override = 0;
     int depth_override = -1;
+    int frame_count = 1;
+    int fps = 24;
+    int loops = 3;
+    int jobs = 8;
 
     for (int i = 2; i < argc; i++) {
         if (strcmp(argv[i], "--mode") == 0) {
@@ -51,32 +191,56 @@ int main(int argc, char *argv[]) {
             }
             i++;
             output_file = argv[i];
-        } else if (strcmp(argv[i], "--aa") == 0) {
+        } else if (strcmp(argv[i], "--output-dir") == 0) {
             if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --aa requires an integer argument.\n");
+                fprintf(stderr, "Error: --output-dir requires an argument.\n");
                 return EXIT_FAILURE;
             }
             i++;
-            char *end = NULL;
-            long val = strtol(argv[i], &end, 10);
-            if (!end || *end != '\0' || val < 1 || val > 8) {
+            output_dir = argv[i];
+        } else if (strcmp(argv[i], "--video") == 0) {
+            if (i + 1 >= argc) {
+                fprintf(stderr, "Error: --video requires an argument.\n");
+                return EXIT_FAILURE;
+            }
+            i++;
+            video_file = argv[i];
+        } else if (strcmp(argv[i], "--aa") == 0) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 1, 8, &aa_override)) {
                 fprintf(stderr, "Error: --aa must be an integer in [1, 8].\n");
                 return EXIT_FAILURE;
             }
-            aa_override = (int)val;
         } else if (strcmp(argv[i], "--depth") == 0) {
-            if (i + 1 >= argc) {
-                fprintf(stderr, "Error: --depth requires an integer argument.\n");
-                return EXIT_FAILURE;
-            }
-            i++;
-            char *end = NULL;
-            long val = strtol(argv[i], &end, 10);
-            if (!end || *end != '\0' || val < 0 || val > 32) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 0, 32, &depth_override)) {
                 fprintf(stderr, "Error: --depth must be an integer in [0, 32].\n");
                 return EXIT_FAILURE;
             }
-            depth_override = (int)val;
+        } else if (strcmp(argv[i], "--frames") == 0) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 1, 360, &frame_count)) {
+                fprintf(stderr, "Error: --frames must be an integer in [1, 360].\n");
+                return EXIT_FAILURE;
+            }
+        } else if (strcmp(argv[i], "--fps") == 0) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 1, 120, &fps)) {
+                fprintf(stderr, "Error: --fps must be an integer in [1, 120].\n");
+                return EXIT_FAILURE;
+            }
+        } else if (strcmp(argv[i], "--loops") == 0) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 1, 32, &loops)) {
+                fprintf(stderr, "Error: --loops must be an integer in [1, 32].\n");
+                return EXIT_FAILURE;
+            }
+        } else if (strcmp(argv[i], "--jobs") == 0) {
+            if (i + 1 >= argc ||
+                !parse_bounded_int(argv[++i], 1, 32, &jobs)) {
+                fprintf(stderr, "Error: --jobs must be an integer in [1, 32].\n");
+                return EXIT_FAILURE;
+            }
         } else if (strcmp(argv[i], "--no-display") == 0) {
             no_display = true;
         } else {
@@ -108,7 +272,42 @@ int main(int argc, char *argv[]) {
     }
 
     ColorRGB *framebuffer = malloc(scene.width * scene.height * sizeof(ColorRGB));
-    if (!framebuffer || !render_scene(&scene, mode, framebuffer)) {
+    if (!framebuffer) {
+        fprintf(stderr, "Error: Out of memory for framebuffer.\n");
+        free_scene(&scene);
+        return EXIT_FAILURE;
+    }
+
+    if (frame_count > 1 || video_file != NULL) {
+        int eff_frames = (frame_count > 1) ? frame_count : 24;
+        if (!render_animation_sequence(&scene, mode, framebuffer,
+                                       output_dir, eff_frames, jobs)) {
+            fprintf(stderr, "Error: Animation frame rendering failed.\n");
+            free(framebuffer);
+            free_scene(&scene);
+            return EXIT_FAILURE;
+        }
+
+        if (video_file != NULL) {
+            fprintf(stdout, "Encoding %d AVS frames (%d loops @ %d fps) -> %s\n",
+                    eff_frames, loops, fps, video_file);
+            fflush(stdout);
+            if (!encode_avs_frames_to_video(output_dir, eff_frames,
+                                            scene.width, scene.height,
+                                            fps, loops, video_file)) {
+                fprintf(stderr, "Error: Video encoding failed.\n");
+                free(framebuffer);
+                free_scene(&scene);
+                return EXIT_FAILURE;
+            }
+        }
+
+        free(framebuffer);
+        free_scene(&scene);
+        return EXIT_SUCCESS;
+    }
+
+    if (!render_scene(&scene, mode, framebuffer)) {
         fprintf(stderr, "Error: Rendering failed.\n");
         free(framebuffer);
         free_scene(&scene);

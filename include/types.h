@@ -112,8 +112,20 @@ typedef enum {
     OBJ_QUADRIC
 } ObjectType;
 
+typedef enum {
+    ANIM_STATIC     = 0,
+    ANIM_BODY       = 1,
+    ANIM_LEG_A      = 2,
+    ANIM_LEG_B      = 3,
+    ANIM_BODY_2     = 4,
+    ANIM_LEG_2A     = 5,
+    ANIM_LEG_2B     = 6,
+    ANIM_ROLE_COUNT = 7
+} AnimRole;
+
 typedef struct Object {
     ObjectType type;
+    AnimRole anim_role;
     Material material;
     TextureMapping tex_map;
     ClipPlane *clip_planes;
@@ -164,6 +176,9 @@ typedef struct {
     Texture *textures;
     int max_depth;   /* Recursion levels for mirror and transparency rays. */
     int aa_samples;  /* Supersampling grid dimension (N x N rays per pixel). */
+    bool has_anim;
+    Vector3 anim_min;
+    Vector3 anim_max;
 } Scene;
 
 typedef enum { RENDER_FLAT, RENDER_PHONG } RenderMode;

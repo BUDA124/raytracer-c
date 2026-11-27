@@ -231,7 +231,7 @@ static void init_default_texmap(TextureMapping *map) {
 }
 
 static bool add_object(Object **objects, size_t *count, size_t *capacity,
-                       const Object *obj) {
+                       const Object *obj, AnimRole role) {
     if (*count >= *capacity) {
         size_t new_cap = (*capacity == 0) ? INITIAL_OBJECT_CAPACITY
                                           : *capacity * 2;
@@ -241,6 +241,7 @@ static bool add_object(Object **objects, size_t *count, size_t *capacity,
         *capacity = new_cap;
     }
     (*objects)[*count] = *obj;
+    (*objects)[*count].anim_role = role;
     (*count)++;
     return true;
 }
@@ -316,6 +317,7 @@ bool load_scene(const char *filename, Scene *out_scene,
 
     Object *objects = NULL;
     size_t obj_count = 0, obj_capacity = 0;
+    AnimRole current_anim_role = ANIM_STATIC;
 
     char line_buf[MAX_LINE_LENGTH];
     size_t line_num = 0;
@@ -815,7 +817,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.sphere.radius = radius;
             init_sphere_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for SPHERE",
                          line_num);
@@ -923,7 +925,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.polygon = polygon;
             init_polygon_default_texmap(&obj.geo.polygon, &obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 free(polygon.vertices);
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for POLYGON",
@@ -974,7 +976,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.disk = disk;
             init_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for DISK",
                          line_num);
@@ -1028,7 +1030,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.ellipse = ellipse;
             init_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for ELLIPSE",
                          line_num);
@@ -1081,7 +1083,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.cylinder = cyl;
             init_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for CYLINDER",
                          line_num);
@@ -1142,7 +1144,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.cone = cone;
             init_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for CONE",
                          line_num);
@@ -1188,7 +1190,7 @@ bool load_scene(const char *filename, Scene *out_scene,
             obj.geo.quadric = q;
             init_default_texmap(&obj.tex_map);
 
-            if (!add_object(&objects, &obj_count, &obj_capacity, &obj)) {
+            if (!add_object(&objects, &obj_count, &obj_capacity, &obj, current_anim_role)) {
                 snprintf(error_message, error_capacity,
                          "Line %zu: Memory allocation failed for QUADRIC",
                          line_num);
@@ -1466,6 +1468,56 @@ bool load_scene(const char *filename, Scene *out_scene,
             objects[obj_count - 1].tex_map.scale_u = su;
             objects[obj_count - 1].tex_map.scale_v = sv;
             objects[obj_count - 1].tex_map.wrap = wrap;
+        }
+
+        else if (strcmp(keyword, "ANIM_RANGE") == 0) {
+            double x0, y0, z0, x1, y1, z1;
+            if (!parse_double(&pos, &x0) || !parse_double(&pos, &y0) ||
+                !parse_double(&pos, &z0) || !parse_double(&pos, &x1) ||
+                !parse_double(&pos, &y1) || !parse_double(&pos, &z1) ||
+                !expect_end(pos)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: ANIM_RANGE requires dx_min dy_min dz_min "
+                         "dx_max dy_max dz_max", line_num);
+                success = false;
+                break;
+            }
+            tmp.anim_min = vec3_create(x0, y0, z0);
+            tmp.anim_max = vec3_create(x1, y1, z1);
+            tmp.has_anim = true;
+        }
+
+        else if (strcmp(keyword, "ANIM_GROUP") == 0) {
+            char group_tok[32];
+            if (!parse_token(&pos, group_tok, sizeof(group_tok)) ||
+                !expect_end(pos)) {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: ANIM_GROUP requires STATIC, BODY, LEG_A, "
+                         "LEG_B, BODY_2, LEG_2A or LEG_2B", line_num);
+                success = false;
+                break;
+            }
+            if (strcmp(group_tok, "STATIC") == 0) {
+                current_anim_role = ANIM_STATIC;
+            } else if (strcmp(group_tok, "BODY") == 0) {
+                current_anim_role = ANIM_BODY;
+            } else if (strcmp(group_tok, "LEG_A") == 0) {
+                current_anim_role = ANIM_LEG_A;
+            } else if (strcmp(group_tok, "LEG_B") == 0) {
+                current_anim_role = ANIM_LEG_B;
+            } else if (strcmp(group_tok, "BODY_2") == 0) {
+                current_anim_role = ANIM_BODY_2;
+            } else if (strcmp(group_tok, "LEG_2A") == 0) {
+                current_anim_role = ANIM_LEG_2A;
+            } else if (strcmp(group_tok, "LEG_2B") == 0) {
+                current_anim_role = ANIM_LEG_2B;
+            } else {
+                snprintf(error_message, error_capacity,
+                         "Line %zu: Unknown ANIM_GROUP '%s'",
+                         line_num, group_tok);
+                success = false;
+                break;
+            }
         }
 
         else {

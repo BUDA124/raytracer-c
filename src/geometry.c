@@ -336,3 +336,134 @@ bool prepare_quadric(const Quadric *quadric, char *error_message,
     if (error_message && error_capacity > 0) error_message[0] = '\0';
     return true;
 }
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+void translate_object(Object *obj, Vector3 delta) {
+    if (!obj) return;
+    if (fabs(delta.x) <= 1e-15 && fabs(delta.y) <= 1e-15 &&
+        fabs(delta.z) <= 1e-15) {
+        return;
+    }
+
+    switch (obj->type) {
+        case OBJ_SPHERE:
+            obj->geo.sphere.center = vec3_add(obj->geo.sphere.center, delta);
+            break;
+        case OBJ_DISK:
+            obj->geo.disk.center = vec3_add(obj->geo.disk.center, delta);
+            break;
+        case OBJ_ELLIPSE:
+            obj->geo.ellipse.center = vec3_add(obj->geo.ellipse.center, delta);
+            break;
+        case OBJ_CYLINDER:
+            obj->geo.cylinder.base = vec3_add(obj->geo.cylinder.base, delta);
+            break;
+        case OBJ_CONE:
+            obj->geo.cone.vertex = vec3_add(obj->geo.cone.vertex, delta);
+            break;
+        case OBJ_POLYGON: {
+            Polygon *poly = &obj->geo.polygon;
+            for (size_t i = 0; i < poly->vertex_count; i++) {
+                poly->vertices[i] = vec3_add(poly->vertices[i], delta);
+            }
+            obj->tex_map.origin = vec3_add(obj->tex_map.origin, delta);
+            for (size_t i = 0; i < poly->vertex_count; i++) {
+                Point3 v = poly->vertices[i];
+                double px, py;
+                if (poly->dropped_axis == 0) {
+                    px = v.y; py = v.z;
+                } else if (poly->dropped_axis == 1) {
+                    px = v.x; py = v.z;
+                } else {
+                    px = v.x; py = v.y;
+                }
+                if (i == 0 || px < poly->proj_min_x) poly->proj_min_x = px;
+                if (i == 0 || px > poly->proj_max_x) poly->proj_max_x = px;
+                if (i == 0 || py < poly->proj_min_y) poly->proj_min_y = py;
+                if (i == 0 || py > poly->proj_max_y) poly->proj_max_y = py;
+            }
+            break;
+        }
+        case OBJ_QUADRIC: {
+            /* Q'(x, y, z) = Q(x - dx, y - dy, z - dz) = 0 */
+            Quadric *q = &obj->geo.quadric;
+            double dx = delta.x, dy = delta.y, dz = delta.z;
+            double new_G = q->G - (q->A * dx + q->D * dy + q->E * dz);
+            double new_H = q->H - (q->D * dx + q->B * dy + q->F * dz);
+            double new_I = q->I - (q->E * dx + q->F * dy + q->C * dz);
+            double new_J = q->J
+                + q->A * dx * dx + q->B * dy * dy + q->C * dz * dz
+                + 2.0 * (q->D * dx * dy + q->E * dx * dz + q->F * dy * dz)
+                - 2.0 * (q->G * dx + q->H * dy + q->I * dz);
+            q->G = new_G;
+            q->H = new_H;
+            q->I = new_I;
+            q->J = new_J;
+            break;
+        }
+    }
+
+    for (size_t i = 0; i < obj->clip_count; i++) {
+        ClipPlane *cp = &obj->clip_planes[i];
+        cp->d -= (cp->a * delta.x + cp->b * delta.y + cp->c * delta.z);
+    }
+}
+
+void compute_animation_deltas(const Scene *scene, int frame_index,
+                              int total_frames,
+                              Vector3 out_deltas[ANIM_ROLE_COUNT]) {
+    for (int r = 0; r < ANIM_ROLE_COUNT; r++) {
+        out_deltas[r] = vec3_create(0.0, 0.0, 0.0);
+    }
+    if (!scene || total_frames <= 1) {
+        return;
+    }
+
+    /* anim_max = Porcupine 1 (rear) forward displacement at peak (w = 1)
+     * anim_min = Porcupine 2 (front) small backward recoil at peak (w = 1) */
+    Vector3 p2_recoil = scene->has_anim
+        ? scene->anim_min : vec3_create(-0.09, 0.0, 0.0);
+    Vector3 p1_forward = scene->has_anim
+        ? scene->anim_max : vec3_create( 0.30, 0.0, 0.0);
+
+    double tau = (double)frame_index / (double)total_frames;
+    double theta = 2.0 * M_PI * tau;
+
+    /* Smooth cycle w in [0, 1]:
+     * tau = 0.00 -> w = 0.0 (both at original base pose)
+     * tau = 0.50 -> w = 1.0 (P1 moved forward by p1_forward, P2 recoiled backward by p2_recoil)
+     * tau = 1.00 -> w = 0.0 (P1 moved back, P2 returned to its original pose)
+     */
+    double w = 0.5 * (1.0 - cos(theta));
+    Vector3 disp1 = vec3_scale(p1_forward, w);
+    Vector3 disp2 = vec3_scale(p2_recoil, w);
+
+    double speed_env = fabs(sin(theta));
+    double dir_sign = (sin(theta) >= 0.0) ? 1.0 : -1.0;
+
+    /* Porcupine 1 (rear) grounded legs & body cadence */
+    double k1 = fmin(1.0, fmax(0.15, vec3_length(p1_forward) / 0.80));
+    double bob1 = 0.018 * k1 * speed_env;
+    double sw1 = 0.075 * k1 * sin(theta);
+    double lf1_a = 0.032 * k1 * fmax(0.0,  sin(theta) * dir_sign);
+    double lf1_b = 0.032 * k1 * fmax(0.0, -sin(theta) * dir_sign);
+
+    out_deltas[ANIM_STATIC] = vec3_create(0.0, 0.0, 0.0);
+    out_deltas[ANIM_BODY]   = vec3_add(disp1, vec3_create(0.0, bob1, 0.0));
+    out_deltas[ANIM_LEG_A]  = vec3_add(disp1, vec3_create( sw1, lf1_a, 0.0));
+    out_deltas[ANIM_LEG_B]  = vec3_add(disp1, vec3_create(-sw1, lf1_b, 0.0));
+
+    /* Porcupine 2 (front) smaller recoil & subtle step back/return */
+    double k2 = fmin(1.0, fmax(0.08, vec3_length(p2_recoil) / 0.80));
+    double bob2 = 0.012 * k2 * speed_env;
+    double sw2 = -0.055 * k2 * sin(theta);
+    double lf2_a = 0.020 * k2 * fmax(0.0, -sin(theta) * dir_sign);
+    double lf2_b = 0.020 * k2 * fmax(0.0,  sin(theta) * dir_sign);
+
+    out_deltas[ANIM_BODY_2] = vec3_add(disp2, vec3_create(0.0, bob2, 0.0));
+    out_deltas[ANIM_LEG_2A] = vec3_add(disp2, vec3_create( sw2, lf2_a, 0.0));
+    out_deltas[ANIM_LEG_2B] = vec3_add(disp2, vec3_create(-sw2, lf2_b, 0.0));
+}

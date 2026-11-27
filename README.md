@@ -27,7 +27,7 @@ make clean    # Remove build artifacts
 ## Usage
 
 ```bash
-./raytracer <scene_file> [--mode flat|phong] [--output <output.avs>] [--aa <1..8>] [--depth <0..32>] [--no-display]
+./raytracer <scene_file> [--mode flat|phong] [--output <output.avs>] [--aa <1..8>] [--depth <0..32>] [--frames <1..360>] [--output-dir <dir>] [--video <file.mp4>] [--fps <1..120>] [--loops <1..32>] [--jobs <1..32>] [--no-display]
 ```
 
 Default mode is `phong`. When `--no-display` is omitted, ImageMagick `display` is launched automatically to show the generated `.avs` image.
@@ -42,6 +42,9 @@ Default mode is `phong`. When `--no-display` is omitted, ImageMagick `display` i
 # Escena race P4
 ./raytracer scenes/race.scene --output images/race.avs
 
+# P4 Scene 2 animation: renders 16 .avs frames with ./raytracer and pipes raw ARGB directly to ffmpeg
+./raytracer scenes/P4_2.scene --aa 1 --frames 16 --output-dir images/frames_p4_2 --video images/P4_2_puercoespin.mp4 --fps 10 --loops 3 --jobs 8 --no-display
+
 # Mirror & transparency demo scene
 ./raytracer scenes/sala_cristal.scene --mode phong --output images/pcristal_1.avs
 
@@ -55,7 +58,8 @@ Default mode is `phong`. When `--no-display` is omitted, ImageMagick `display` i
 
 ```bash
 make run_p4_1    # Render P4 scene 1 (Observatorio Astronomico de Cristal)
-make run_p4_2    # Render P4 scene 2 (Taller de Geometria y Arte Moderno)
+make run_p4_2    # Render P4 scene 2 (Puercoespin Americano en el Bosque)
+make video_p4_2  # Render P4 scene 2 animation frames (.avs) and encode MP4 video via ffmpeg
 make run_p2      # Render P2 scene
 make run_p3_1    # Render P3 scene 1
 make run_p3_2    # Render P3 scene 2
@@ -95,6 +99,10 @@ MAP_POLY otx oty otz ux uy uz vx vy vz su sv [repeat|clamp]
 MAP_SPHERE x1 x2 x3 y1 y2 y3 [su sv] [repeat|clamp]
 MAP_AXIS ux uy uz [su sv] [repeat|clamp]             # Custom U reference for CYLINDER / CONE
 TEX_SCALE su sv [repeat|clamp]
+
+# Animation directives (for multi-frame rendering with --frames)
+ANIM_RANGE dx_min dy_min dz_min dx_max dy_max dz_max
+ANIM_GROUP STATIC|BODY|LEG_A|LEG_B|BODY_2|LEG_2A|LEG_2B
 ```
 
 - Lines starting with `#` are comments.

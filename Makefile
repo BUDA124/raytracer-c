@@ -40,7 +40,12 @@ run_p4_2: $(TARGET)
 	mkdir -p images
 	./$(TARGET) scenes/P4_2.scene --mode phong --output images/P4_2.avs
 
+video_p4_2: $(TARGET)
+	mkdir -p images/frames_p4_2
+	rm -f images/frames_p4_2/frame_*.avs
+	./$(TARGET) scenes/P4_2.scene --mode phong --aa 1 --frames 16 --output-dir images/frames_p4_2 --video images/P4_2_puercoespin.mp4 --fps 10 --loops 3 --jobs 8 --no-display
+
 clean:
 	rm -f $(OBJ) $(DEP) $(TARGET) $(TARGET)_asan
 
-.PHONY: all asan clean run_p2 run_p3_1 run_p3_2 run_p4_1 run_p4_2
+.PHONY: all asan clean run_p2 run_p3_1 run_p3_2 run_p4_1 run_p4_2 video_p4_2

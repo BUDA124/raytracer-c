@@ -132,3 +132,128 @@ bool display_image(const char *filename) {
     return true;
 #endif
 }
+
+bool encode_avs_frames_to_video(const char *frames_dir, int frame_count,
+                                size_t width, size_t height, int fps,
+                                int loops, const char *video_file) {
+    if (!frames_dir || frame_count <= 0 || width == 0 || height == 0 ||
+        fps <= 0 || loops <= 0 || !video_file) {
+        return false;
+    }
+
+#ifdef _WIN32
+    (void)frames_dir;
+    (void)frame_count;
+    (void)width;
+    (void)height;
+    (void)fps;
+    (void)loops;
+    (void)video_file;
+    fprintf(stderr, "Error: Direct ffmpeg pipe is only supported on POSIX.\n");
+    return false;
+#else
+    size_t frame_bytes = width * height * 4;
+    uint8_t *buf = malloc(frame_bytes);
+    if (!buf) {
+        fprintf(stderr, "Error: Out of memory for AVS video buffer.\n");
+        return false;
+    }
+
+    int pipefd[2];
+    if (pipe(pipefd) != 0) {
+        free(buf);
+        fprintf(stderr, "Error: pipe() failed for ffmpeg.\n");
+        return false;
+    }
+
+    char size_arg[64];
+    char fps_arg[32];
+    snprintf(size_arg, sizeof(size_arg), "%zux%zu", width, height);
+    snprintf(fps_arg, sizeof(fps_arg), "%d", fps);
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]);
+        close(pipefd[1]);
+        free(buf);
+        fprintf(stderr, "Error: fork() failed for ffmpeg.\n");
+        return false;
+    }
+
+    if (pid == 0) {
+        close(pipefd[1]);
+        if (dup2(pipefd[0], STDIN_FILENO) < 0) {
+            _exit(126);
+        }
+        close(pipefd[0]);
+
+        execlp("ffmpeg", "ffmpeg",
+               "-y", "-v", "error",
+               "-f", "rawvideo",
+               "-pixel_format", "argb",
+               "-video_size", size_arg,
+               "-framerate", fps_arg,
+               "-i", "-",
+               "-c:v", "libx264",
+               "-pix_fmt", "yuv420p",
+               "-crf", "18",
+               video_file,
+               (char *)NULL);
+        _exit(127);
+    }
+
+    close(pipefd[0]);
+    bool ok = true;
+
+    for (int cycle = 0; cycle < loops && ok; cycle++) {
+        for (int f = 0; f < frame_count; f++) {
+            char frame_path[512];
+            snprintf(frame_path, sizeof(frame_path),
+                     "%s/frame_%03d.avs", frames_dir, f);
+
+            FILE *fp = fopen(frame_path, "rb");
+            if (!fp) {
+                fprintf(stderr, "Error: Cannot open frame '%s'.\n",
+                        frame_path);
+                ok = false;
+                break;
+            }
+
+            uint8_t header[8];
+            if (fread(header, 1, 8, fp) != 8 ||
+                fread(buf, 1, frame_bytes, fp) != frame_bytes) {
+                fprintf(stderr, "Error: Truncated AVS frame '%s'.\n",
+                        frame_path);
+                fclose(fp);
+                ok = false;
+                break;
+            }
+            fclose(fp);
+
+            size_t written = 0;
+            while (written < frame_bytes) {
+                ssize_t n = write(pipefd[1], buf + written,
+                                  frame_bytes - written);
+                if (n <= 0) {
+                    ok = false;
+                    break;
+                }
+                written += (size_t)n;
+            }
+            if (!ok) break;
+        }
+    }
+
+    close(pipefd[1]);
+    free(buf);
+
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0 || !WIFEXITED(status) ||
+        WEXITSTATUS(status) != 0) {
+        fprintf(stderr, "Error: ffmpeg encoding failed.\n");
+        return false;
+    }
+
+    return ok;
+#endif
+}

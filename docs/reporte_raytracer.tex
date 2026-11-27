@@ -1,0 +1,269 @@
+\documentclass[11pt,letterpaper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish,es-nodecimaldot]{babel}
+\usepackage{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+
+\geometry{margin=2.4cm}
+\setlength{\emergencystretch}{1.5em}
+
+\definecolor{codebg}{RGB}{246,248,250}
+\definecolor{codeframe}{RGB}{210,216,224}
+\definecolor{accent}{RGB}{24,78,138}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=accent,
+    urlcolor=accent,
+    pdftitle={Reporte Técnico: Raytracer en C99, Animación con FFmpeg y Efectos de Ray Tracing},
+    pdfauthor={Equipo PR04-CG}
+}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    frame=single,
+    rulecolor=\color{codeframe},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    columns=fullflexible,
+    keepspaces=true,
+    showstringspaces=false
+}
+
+\title{\textbf{Reporte Técnico — Proyecto 4 (PR04-CG)}\\[0.4em]
+\large Generación de Imágenes y Video con nuestro \textit{Raytracer} en C99 y \texttt{FFmpeg},\\
+y Manejo de Efectos Obligatorios y Opcionales de \textit{Ray Tracing}}
+\author{Curso de Computación Gráfica}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ============================================================================
+\section{Generación de Imágenes y Animación usando únicamente nuestro Raytracer y FFmpeg}
+% ============================================================================
+
+Uno de los objetivos centrales del proyecto fue producir una secuencia animada (el video de los puercoespines americanos en el bosque, \texttt{images/P4\_2\_puercoespin.mp4}) utilizando \textbf{exclusivamente imágenes generadas por nuestro propio \textit{raytracer} en C99} y codificándolas \textbf{únicamente con \texttt{FFmpeg}}, sin depender de scripts externos en Python, motores 3D de terceros ni herramientas intermedias de conversión de imágenes como ImageMagick.
+
+\subsection{Visión general del flujo de trabajo (\textit{pipeline})}
+
+Todo el proceso ocurre en una cadena directa de dos programas:
+
+\begin{center}
+{\small
+\fbox{\texttt{scenes/P4\_2.scene}} $\rightarrow$
+\fbox{\texttt{./raytracer} (C99)} $\xrightarrow{\text{\texttt{.avs} + pipe ARGB}}$
+\fbox{\texttt{ffmpeg}} $\rightarrow$
+\fbox{\texttt{P4\_2\_puercoespin.mp4}}
+}
+\end{center}
+
+\begin{enumerate}[leftmargin=1.5em]
+    \item \textbf{Lectura única de escena y texturas (\texttt{src/scene\_io.c}, \texttt{src/texture.c}):}
+    El ejecutable \texttt{./raytracer} lee el archivo descriptivo \texttt{scenes/P4\_2.scene} y carga una sola vez en memoria RAM todas las texturas (\texttt{.ppm} y \texttt{.avs}), luces, parámetros de cámara y las primitivas geométricas 3D.
+
+    \item \textbf{Transformación 3D por fotograma (\texttt{src/geometry.c}):}
+    Cuando se invoca con la bandera \texttt{-{}-frames N}, el raytracer calcula para cada fotograma $f \in \{0, \dots, N-1\}$ el desplazamiento exacto en el espacio 3D de las partes móviles de cada puercoespín y actualiza sus ecuaciones geométricas antes de lanzar los rayos.
+
+    \item \textbf{Renderizado paralelo de imágenes \texttt{.avs} (\texttt{src/main.c}, \texttt{src/ray.c}):}
+    Mediante procesos paralelos POSIX (\texttt{fork()}), todos los núcleos del procesador trazan los rayos de distintos fotogramas en paralelo y guardan cada imagen individual en disco en formato Stardent AVS (\path{images/frames_p4_2/frame_000.avs}, \path{frame_001.avs}, etc.).
+
+    \item \textbf{Conexión directa con \texttt{FFmpeg} por \textit{pipe} (\texttt{src/image\_io.c}):}
+    Al terminar los fotogramas \texttt{.avs}, el mismo \texttt{./raytracer} abre un canal de comunicación en memoria (\texttt{pipe()} POSIX) hacia \texttt{ffmpeg}, lee los píxeles crudos \texttt{ARGB} de cada archivo \texttt{.avs} generado y los entrega directamente a la entrada estándar de \texttt{ffmpeg} para producir el archivo \texttt{.mp4}.
+\end{enumerate}
+
+\subsection{Cómo genera cada imagen \texttt{.avs} nuestro Raytracer}
+
+Para cada fotograma de resolución $W \times H$ ($1300 \times 760$), la función \texttt{render\_scene()} recorre cada píxel $(x, y)$, lanza los rayos hacia la escena 3D calculando intersecciones exactas, sombras, reflejos en espejos, transparencias y texturas, y almacena el color resultante $(R, G, B) \in [0, 1]^3$ en un \textit{framebuffer} en memoria.
+
+Posteriormente, \texttt{save\_avs\_image()} escribe el archivo binario \texttt{.avs} siguiendo el formato estándar de 32 bits sin compresión:
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Cabecera de 8 bytes:} Dos enteros sin signo de 32 bits en orden \textit{big-endian} que indican el ancho ($W$) y el alto ($H$) de la imagen.
+    \item \textbf{Cuerpo de píxeles ($W \times H \times 4$ bytes):} Recorrido de arriba hacia abajo donde cada píxel ocupa exactamente 4 bytes en orden \texttt{[Alpha=255, R, G, B]} con valores enteros en $[0, 255]$.
+\end{itemize}
+
+\subsection{Cómo funciona la animación 3D dentro del Raytracer}
+
+Para evitar regenerar archivos de escena con programas externos, extendimos el lenguaje de escenas (\texttt{src/scene\_io.c}) con dos directivas sencillas:
+\begin{lstlisting}
+ANIM_RANGE -0.09 0.00 0.00  0.28 0.00 0.00
+ANIM_GROUP STATIC | BODY | LEG_A | LEG_B | BODY_2 | LEG_2A | LEG_2B
+\end{lstlisting}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Cinemática suave de ida y vuelta (\texttt{compute\_animation\_deltas}):}
+    Para el fotograma $f$ de un ciclo de $N$ fotogramas, se define el ángulo de fase $\theta = 2\pi f / N$ y el factor armónico suave:
+    \[
+        w(\theta) = \frac{1 - \cos\theta}{2} \in [0, 1].
+    \]
+    Cuando $w$ sube de $0$ a $1$, el puercoespín trasero (inclinado $45^\circ$) avanza hasta $+0.28$ unidades en $X$ mientras sus patas traseras apoyadas en el suelo alternan su apoyo (\texttt{LEG\_A}, \texttt{LEG\_B}) y sus patas delanteras levantadas se mueven solidarias al torso (\texttt{BODY}). Al mismo tiempo, el puercoespín delantero (\texttt{BODY\_2}, \texttt{LEG\_2A}, \texttt{LEG\_2B}) retrocede suavemente una distancia menor ($-0.09$ unidades). Cuando $w$ baja de $1$ a $0$, el trasero retrocede y el delantero vuelve exactamente a su pose original.
+
+    \item \textbf{Traslación geométrica exacta en 3D (\texttt{translate\_object}):}
+    Cada objeto animado se desplaza en el espacio 3D por su vector $\Delta = (\Delta x, \Delta y, \Delta z)$:
+    \begin{itemize}
+        \item En esferas, discos, elipses, cilindros, conos y polígonos, se suma $\Delta$ directamente a sus puntos base, centros o vértices.
+        \item En \textbf{superficies cuádricas} $Q(x,y,z) = 0$ (como los hocicos, narices y pies plantígrados rotados), trasladar la superficie equivale a evaluar $Q(x - \Delta x, y - \Delta y, z - \Delta z) = 0$, actualizando algebraicamente en C los coeficientes $G, H, I, J$ sin perder exactitud ni requerir mallas de triángulos.
+    \end{itemize}
+    Debido a que los objetos se mueven realmente en 3D dentro del raytracer, las sombras proyectadas sobre el césped y el reflejo del costado izquierdo de ambos puercoespines en el espejo del fondo se actualizan físicamente en cada fotograma.
+\end{itemize}
+
+\subsection{Por qué FFmpeg puede leer las imágenes del Raytracer sin ImageMagick}
+
+\texttt{FFmpeg} cuenta con un decodificador nativo de video crudo (\texttt{-f rawvideo -pixel\_format argb}). Como el cuerpo de cada archivo \texttt{.avs} producido por nuestro raytracer es precisamente una matriz continua de píxeles \texttt{ARGB} precedida únicamente por 8 bytes de dimensiones, no hace falta convertir las imágenes a \texttt{.png} ni \texttt{.jpg}.
+
+En \texttt{encode\_avs\_frames\_to\_video()} (\texttt{src/image\_io.c}), nuestro raytracer crea un \texttt{pipe()} de sistema operativo e invoca directamente a \texttt{ffmpeg} mediante \texttt{fork()} y \texttt{execlp()}:
+\begin{lstlisting}
+ffmpeg -y -v error -f rawvideo -pixel_format argb -video_size 1300x760 \
+       -framerate 10 -i - -c:v libx264 -pix_fmt yuv420p -crf 18 images/P4_2_puercoespin.mp4
+\end{lstlisting}
+Por cada fotograma \texttt{frame\_000.avs} $\dots$ \texttt{frame\_015.avs} almacenado en disco (y durante el número de repeticiones deseado con \texttt{-{}-loops}), el programa en C descarta los primeros 8 bytes de cabecera con \texttt{fread()} y envía los $1300 \times 760 \times 4$ bytes de píxeles \texttt{ARGB} por el descriptor del \textit{pipe} directo hacia \texttt{ffmpeg}. Así se obtiene toda la animación con un solo comando:
+\begin{lstlisting}
+./raytracer scenes/P4_2.scene --mode phong --aa 1 --frames 16 \
+    --output-dir images/frames_p4_2 --video images/P4_2_puercoespin.mp4 \
+    --fps 10 --loops 3 --jobs 8 --no-display
+\end{lstlisting}
+
+\newpage
+% ============================================================================
+\section{Manejo de Efectos Obligatorios y Opcionales de \textit{Ray Tracing}}
+% ============================================================================
+
+A continuación se documenta cómo se implementó en nuestro motor en C99 cada uno de los \textbf{21 efectos obligatorios} (marcados con casilla de verificación en la especificación del proyecto) así como el \textbf{efecto opcional de Texturas en Conos}. Asimismo, se respetó estrictamente la exclusión de los efectos marcados como \texttt{(NO)} (\textit{luces de colores, filtros de colores, transparencia refractiva y bump mapping}).
+
+\begin{longtable}{@{}>{\raggedright\arraybackslash}p{0.42\textwidth}>{\raggedright\arraybackslash}p{0.18\textwidth}>{\raggedright\arraybackslash}p{0.34\textwidth}@{}}
+\toprule
+\textbf{Efecto (según lista oficial)} & \textbf{Estado} & \textbf{Módulos principales en C} \\
+\midrule
+\endhead
+1. Código general & Obligatorio ($\checkmark$) & \texttt{main.c}, \texttt{ray.c}, \texttt{scene\_io.c}, \texttt{image\_io.c} \\
+2. Esferas & Obligatorio ($\checkmark$) & \texttt{intersect.c} (\texttt{intersect\_sphere}) \\
+3. Iluminación Difusa & Obligatorio ($\checkmark$) & \texttt{shader.c} (\texttt{shade\_intersection}) \\
+4. Luz & Obligatorio ($\checkmark$) & \texttt{scene\_io.c}, \texttt{shader.c} \\
+5. Intensidad & Obligatorio ($\checkmark$) & \texttt{shader.c} ($I_a, I_p, F_{\text{att}}$) \\
+6. Múltiples Luces & Obligatorio ($\checkmark$) & \texttt{scene\_io.c}, \texttt{shader.c} \\
+7. Sombras & Obligatorio ($\checkmark$) & \texttt{shader.c} (\texttt{light\_transmission}) \\
+8. Reflexión Especular & Obligatorio ($\checkmark$) & \texttt{shader.c} (\texttt{specular\_power}) \\
+9. Polígonos & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+10. Espejos & Obligatorio ($\checkmark$) & \texttt{shader.c} ($O_2$, rayos reflejados) \\
+11. Transparencia no refractiva & Obligatorio ($\checkmark$) & \texttt{shader.c} ($O_3$, rayos transmitidos) \\
+12. Antialiasing & Obligatorio ($\checkmark$) & \texttt{ray.c} (\texttt{aa\_samples}) \\
+13. Cilindros & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+14. Conos & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+15. Discos & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+16. Elipses & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+17. Planos de Corte & Obligatorio ($\checkmark$) & \texttt{intersect.c} (\texttt{passes\_clip\_planes}) \\
+18. Superficies Cuadráticas & Obligatorio ($\checkmark$) & \texttt{geometry.c}, \texttt{intersect.c} \\
+19. Texturas en Polígonos & Obligatorio ($\checkmark$) & \texttt{texture.c} (\texttt{OBJ\_POLYGON}) \\
+20. Texturas en Cilindros & Obligatorio ($\checkmark$) & \texttt{texture.c} (\texttt{OBJ\_CYLINDER}) \\
+21. Texturas en Esferas & Obligatorio ($\checkmark$) & \texttt{texture.c} (\texttt{OBJ\_SPHERE}) \\
+22. Texturas en Conos & \textbf{Opcional ($\bigstar$)} & \texttt{texture.c} (\texttt{OBJ\_CONE}) \\
+\bottomrule
+\end{longtable}
+
+\subsection{Arquitectura general y cámara}
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Código general:} Implementado íntegramente desde cero en C99 estándar usando únicamente la biblioteca matemática \texttt{-lm}. Incluye un analizador léxico/sintáctico robusto de archivos \texttt{.scene} con validación de rangos (\texttt{src/scene\_io.c}), álgebra vectorial 3D (\texttt{src/vector3.c}), cámara configurable mediante ojo (\texttt{EYE}), ventana (\texttt{WINDOW}) y orientación libre opcional (\texttt{LOOKAT} que construye una base ortonormal cámara $\mathbf{u}_{\text{right}}, \mathbf{v}_{\text{up}}, \mathbf{w}_{\text{fwd}}$), recorrido de rayos primarios (\texttt{src/ray.c}) y exportación binaria \texttt{.avs} a $1300 \times 760$ (\texttt{src/image\_io.c}).
+    \item \textbf{Antialiasing:} En \texttt{render\_scene()} (\texttt{src/ray.c}), cada píxel $(x, y)$ se subdivide en una cuadrícula regular de $N \times N$ subpíxeles (directiva \texttt{AA N} o bandera \texttt{-{}-aa}), trazando rayos a través de los centros $\left(x + \frac{s_x + 0.5}{N},\; y + \frac{s_y + 0.5}{N}\right)$ y promediando los $N^2$ colores obtenidos. Esto suaviza bordes oblicuos, horizontes y las finas púas de los puercoespines.
+\end{itemize}
+
+\subsection{Iluminación, sombras, espejos y transparencia (\texttt{src/shader.c})}
+
+El módulo de sombreado implementa el algoritmo recursivo \texttt{De\_que\_color} (\texttt{shade\_intersection}):
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Luz, Intensidad y Múltiples Luces:} Se soportan múltiples fuentes puntuales blancas almacenadas dinámicamente en \texttt{scene->lights}. Solo se emplean intensidades escalares blancas ($I_a, I_p \in [0, 1]$, sin luces de colores). Para cada fuente $k$ a distancia $d_L = \|\mathbf{P}_L - \mathbf{P}\|$, se evalúa el factor de atenuación cuadrática:
+    \[
+        F_{\text{att}} = \min\!\left(1,\; \frac{1}{c_1 + c_2 d_L + c_3 d_L^2}\right).
+    \]
+
+    \item \textbf{Iluminación Difusa:} Parte de la componente ambiental $I = I_a K_a$ y acumula para cada luz visible el producto escalar de Lambert $(\mathbf{N}\cdot\mathbf{L})\,K_d\,I_p\,F_{\text{att}}$ cuando $\mathbf{N}\cdot\mathbf{L} > 0$ (donde la normal $\mathbf{N}$ siempre se orienta hacia el semiespacio del rayo incidente mediante \texttt{front\_face}), acotando $I \le 1$ y multiplicando por el color propio o texel del objeto.
+
+    \item \textbf{Reflexión Especular:} Para cada luz con $\mathbf{N}\cdot\mathbf{L} > 0$, se calcula el vector reflejado $\mathbf{R} = 2(\mathbf{N}\cdot\mathbf{L})\mathbf{N} - \mathbf{L}$ y el vector al observador $\mathbf{V} = -\mathbf{D}$. Si $\mathbf{R}\cdot\mathbf{V} > 0$, se acumula $E \mathrel{+}= (\mathbf{R}\cdot\mathbf{V})^{K_n} K_s I_p F_{\text{att}}$ con exponente entero $K_n$ (\texttt{shininess}), acotando $E \le 1$ y mezclando el brillo especular hacia el blanco al final: $\mathbf{C}_{\text{final}} = \mathbf{C} + E(1 - \mathbf{C})$.
+
+    \item \textbf{Sombras (opacas y atenuadas):} La función \texttt{light\_transmission()} lanza un rayo de sombra desde $\mathbf{P} + \varepsilon\mathbf{N}$ (evitando auto-intersección o \textit{shadow acne}) hacia cada luz hasta $t_{\max} = d_L - \varepsilon$. Si golpea un objeto opaco ($O_3 = 0$), retorna transmisión $0$ (sombra completa). Si atraviesa objetos con transparencia no refractiva ($O_3 > 0$), multiplica la transmisión acumulada por $O_3$ y avanza el rayo más allá del obstáculo, produciendo sombras translúcidas atenuadas (sin filtros de color).
+
+    \item \textbf{Espejos ($O_2$):} Cada material define pesos $(O_1, O_2, O_3) \in [0,1]^3$ tales que $O_1 + O_2 + O_3 = 1$. Cuando el nivel de recursión \texttt{depth > 0} y $O_2 > 0$, se traza un rayo secundario reflejado desde $\mathbf{P} + \varepsilon\mathbf{N}$ en dirección $\mathbf{R}_V = 2(\mathbf{N}\cdot\mathbf{V})\mathbf{N} - \mathbf{V}$. En la escena 2 se utiliza un gran espejo inclinado al fondo ($O_2 = 0.88$) que permite observar simultáneamente el costado izquierdo de ambos puercoespines en movimiento.
+
+    \item \textbf{Transparencia no refractiva ($O_3$):} Cuando \texttt{depth > 0} y $O_3 > 0$, se traza un rayo secundario desde $\mathbf{P} + \varepsilon\mathbf{D}$ manteniendo exactamente la misma dirección $\mathbf{D}$ del rayo incidente (sin desviación refractiva por índice de Snell). El color antes del brillo especular se combina linealmente como:
+    \[
+        \mathbf{C} = O_1\,\mathbf{C}_{\text{propio}} + O_2\,\mathbf{C}_{\text{reflejado}} + O_3\,\mathbf{C}_{\text{transmitido}}.
+    \]
+\end{itemize}
+
+\subsection{Primitivas geométricas y planos de corte (\texttt{src/geometry.c}, \texttt{src/intersect.c})}
+
+En todas las primitivas cuadráticas se resuelve $q_a t^2 + q_b t + q_c = 0$ en orden creciente de raíces ($t_0 \le t_1$) mediante \texttt{solve\_quadratic\_sorted()}, verificando $t \in [t_{\min}, t_{\max}]$ y los planos de corte asociados:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Esferas:} Resuelve $\|\mathbf{o} + t\mathbf{d} - \mathbf{c}\|^2 = r^2$ con normal unitaria $(\mathbf{P} - \mathbf{c})/r$. Usadas en cráneos, hombros, ancas, mejillas y ojos de los puercoespines, así como en orbes de \texttt{P4\_1.scene}.
+    \item \textbf{Polígonos:} En la carga se valida la coplanaridad de los vértices, se calcula la normal del plano mediante producto cruz y se identifica la coordenada dominante a descartar (\texttt{dropped\_axis}) para proyectar los vértices a 2D con una caja delimitadora (\textit{bounding box}). En tiempo de trazado se halla la intersección rayo-plano y se aplica el algoritmo de cruce de rayos (\textit{even-odd rule}) en 2D. Empleados en el césped, fondos de bosque, espejo trasero y arquitectura de \texttt{P4\_1.scene}.
+    \item \textbf{Cilindros:} Definidos por punto base $\mathbf{b}$, eje unitario $\mathbf{a}$, radio $R$ y límites axiales $[h_{\min}, h_{\max}]$. Se proyectan el origen relativo y la dirección perpendicularmente a $\mathbf{a}$ ($\mathbf{d}_\perp = \mathbf{d} - (\mathbf{d}\cdot\mathbf{a})\mathbf{a}$) para resolver $\|\mathbf{oc}_\perp + t\mathbf{d}_\perp\|^2 = R^2$, aceptando las raíces cuya altura axial $h = (\mathbf{P}-\mathbf{b})\cdot\mathbf{a}$ cumpla $h_{\min} \le h \le h_{\max}$. Usados en los troncos de árboles, el torso capsular y las patas de los puercoespines.
+    \item \textbf{Conos:} Definidos por vértice $\mathbf{v}$, eje unitario $\mathbf{a}$, semi-ángulo $\alpha \in (0^\circ, 90^\circ)$ con $m = 1 + \tan^2\alpha$, y cotas $[h_{\min}, h_{\max}]$. Se resuelve $(\mathbf{d}\cdot\mathbf{d} - m(\mathbf{d}\cdot\mathbf{a})^2)t^2 + 2(\mathbf{d}\cdot\mathbf{q}_0 - m(\mathbf{d}\cdot\mathbf{a})(\mathbf{q}_0\cdot\mathbf{a}))t + (\mathbf{q}_0\cdot\mathbf{q}_0 - m(\mathbf{q}_0\cdot\mathbf{a})^2) = 0$, validando $h = (\mathbf{P}-\mathbf{v})\cdot\mathbf{a} \in [h_{\min}, h_{\max}]$ y obteniendo la normal a partir del gradiente $\mathbf{q} - m h \mathbf{a}$. Empleados en las 216 púas, las colas musculosas y las garras curvas de los puercoespines.
+    \item \textbf{Discos:} Intersección rayo-plano $(\mathbf{P} - \mathbf{c})\cdot\mathbf{n} = 0$ restringida a $r_{\text{in}}^2 \le \|\mathbf{P} - \mathbf{c}\|^2 \le r_{\text{out}}^2$, soportando discos llenos ($r_{\text{in}} = 0$) y anillos huecos ($r_{\text{in}} > 0$), usados en bases de árboles, columnas y anillos planetarios.
+    \item \textbf{Elipses:} Construye en el pre-cálculo dos ejes ortonormales $(\mathbf{u}, \mathbf{v})$ en el plano perpendicular a $\mathbf{n}$ y verifica en la intersección plana que $\left(\frac{(\mathbf{P}-\mathbf{c})\cdot\mathbf{u}}{a}\right)^2 + \left(\frac{(\mathbf{P}-\mathbf{c})\cdot\mathbf{v}}{b}\right)^2 \le 1$.
+    \item \textbf{Superficies Cuadráticas:} Resuelve la ecuación general implícita de segundo grado
+    \[
+        Ax^2 + By^2 + Cz^2 + 2Dxy + 2Exz + 2Fyz + 2Gx + 2Hy + 2Iz + J = 0
+    \]
+    sustituyendo $\mathbf{P}(t) = \mathbf{o} + t\mathbf{d}$ y evaluando la normal mediante el gradiente analítico $\nabla Q(\mathbf{P})$. En \texttt{P4\_2.scene} se aprovecha incluso el término cruzado $2Dxy$ para rotar a $45^\circ$ los elipsoides del hocico, la nariz y las patas del primer puercoespín, y en \texttt{P4\_1.scene} para el pedestal hiperboloide de una hoja.
+    \item \textbf{Planos de Corte:} Cualquier primitiva puede ir seguida de múltiples directivas \texttt{CLIP a b c d}. Para cada raíz candidata $t_i$, \texttt{passes\_clip\_planes()} verifica $a x + b y + c z + d \ge 0$ para todos los planos asociados; si la raíz cercana $t_0$ es recortada, el bucle evalúa automáticamente la raíz lejana $t_1$, permitiendo visualizar el interior hueco de esferas, conos, cilindros y cuádricas seccionadas.
+\end{itemize}
+
+\subsection{Mapeo de texturas obligatorias y efecto opcional en conos (\texttt{src/texture.c})}
+
+El motor incluye un cargador propio en C99 de texturas \texttt{.ppm} (\texttt{P3} ASCII y \texttt{P6} binario de 8/16 bits) y \texttt{.avs}, con interpolación \textbf{bilineal} (\texttt{sample\_texture}) y modos de envoltura \texttt{repeat} y \texttt{clamp}:
+
+\begin{itemize}[leftmargin=1.5em]
+    \item \textbf{Texturas en Polígonos:} Dado un origen de textura $\mathbf{O}_t$, dos ejes unitarios $(\mathbf{U}, \mathbf{V})$ en el plano y escalas $(s_u, s_v)$ (calculados automáticamente por la caja del polígono o configurados con \texttt{MAP\_POLY}), las coordenadas $(u, v)$ se obtienen por proyección plana:
+    \[
+        u = \frac{(\mathbf{P} - \mathbf{O}_t)\cdot\mathbf{U}}{s_u}, \qquad
+        v = \frac{(\mathbf{P} - \mathbf{O}_t)\cdot\mathbf{V}}{s_v}.
+    \]
+    Utilizado en el suelo musgoso del bosque y en los fondos panorámicos de coníferas.
+
+    \item \textbf{Texturas en Cilindros:} Sea $\mathbf{r} = \mathbf{P} - \mathbf{b}$ y la base ortonormal $(\mathbf{u}, \mathbf{a}, \mathbf{w})$ del cilindro (personalizable con \texttt{MAP\_AXIS}). La altura $h = \mathbf{r}\cdot\mathbf{a}$ y las componentes radiales $(r_u, r_w) = (\mathbf{r}\cdot\mathbf{u}, \mathbf{r}\cdot\mathbf{w})$ definen:
+    \[
+        u = \frac{\operatorname{atan2}(r_w, r_u) + \pi}{2\pi}\,s_u, \qquad
+        v = \frac{h - h_{\min}}{h_{\max} - h_{\min}}\,s_v.
+    \]
+    Utilizado en la corteza de los árboles y en el cilindro central de pelaje de ambos puercoespines.
+
+    \item \textbf{Texturas en Esferas:} Dado el vector unitario radial $\mathbf{d} = (\mathbf{P} - \mathbf{c})/r$ expresado en la base ortonormal local $(\mathbf{X}_{\text{loc}}, \mathbf{Y}_{\text{loc}}, \mathbf{Z}_{\text{loc}})$ de la esfera (configurable con \texttt{MAP\_SPHERE} para orientar los polos de la textura en cualquier dirección 3D, p.\ ej., alineando las hebras del pelaje con la inclinación de $45^\circ$ del primer puercoespín):
+    \[
+        u = \frac{\operatorname{atan2}(z_{\text{loc}}, x_{\text{loc}}) + \pi}{2\pi}\,s_u, \qquad
+        v = \left(1 - \frac{\arccos(y_{\text{loc}})}{\pi}\right) s_v.
+    \]
+
+    \item \textbf{Texturas en Conos (Efecto Opcional Implementado):}
+    Para mapear texturas sobre un cono finito de vértice $\mathbf{v}$ y eje unitario $\mathbf{a}$ entre $h_{\min}$ y $h_{\max}$, se construye una base ortonormal $(\mathbf{u}, \mathbf{a}, \mathbf{w})$ perpendicular al eje del cono (también ajustable con \texttt{MAP\_AXIS}). Dado el punto de impacto $\mathbf{P}$, se toma el vector desde el vértice $\mathbf{q} = \mathbf{P} - \mathbf{v}$ y se proyecta sobre la base local:
+    \[
+        h = \mathbf{q}\cdot\mathbf{a}, \qquad
+        q_u = \mathbf{q}\cdot\mathbf{u}, \qquad
+        q_w = \mathbf{q}\cdot\mathbf{w}.
+    \]
+    La coordenada acimutal $u$ recorre el perímetro circular de cada sección transversal del cono (tratando de forma segura la singularidad exacta en el vértice cuando $\sqrt{q_u^2 + q_w^2} < \varepsilon$), mientras que $v$ interpola linealmente la distancia axial desde el vértice ($v=0$) hasta la base ($v=1$):
+    \[
+        u = \begin{cases}
+            0, & \text{si } \sqrt{q_u^2 + q_w^2} < \varepsilon,\\[0.4em]
+            \dfrac{\operatorname{atan2}(q_w, q_u) + \pi}{2\pi}\,s_u, & \text{en otro caso,}
+        \end{cases}
+        \qquad
+        v = \frac{h - h_{\min}}{h_{\max} - h_{\min}}\,s_v.
+    \]
+    Esta parametrización fue clave en la escena 2 para texturizar tanto las \textbf{216 púas cónicas} de los puercoespines americanos (\texttt{textures/porcupine\_quill.ppm}, asignando automáticamente la punta afilada oscura a $v=0$, el tallo color crema-pajizo al tramo medio y la raíz oscura a $v=1$) como sus colas cónicas peludas (\texttt{textures/porcupine\_fur.ppm}), además de los conos ornamentales \texttt{.avs} en \texttt{P4\_1.scene}.
+\end{itemize}
+
+\end{document}

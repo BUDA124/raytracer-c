@@ -3,6 +3,12 @@
 raytracer
 raytracer.exe
 
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+
 images/*
 !images/.gitkeep
 

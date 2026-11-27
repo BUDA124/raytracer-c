@@ -19,4 +19,9 @@ bool prepare_cone(Cone *cone, char *error_message, size_t error_capacity);
 bool prepare_quadric(const Quadric *quadric, char *error_message,
                      size_t error_capacity);
 
+void translate_object(Object *obj, Vector3 delta);
+void compute_animation_deltas(const Scene *scene, int frame_index,
+                              int total_frames,
+                              Vector3 out_deltas[ANIM_ROLE_COUNT]);
+
 #endif
