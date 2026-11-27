@@ -39,6 +39,9 @@ Default mode is `phong`. When `--no-display` is omitted, ImageMagick `display` i
 ./raytracer scenes/P4_1.scene --output images/P4_1.avs
 ./raytracer scenes/P4_2.scene --output images/P4_2.avs
 
+# Escena race P4
+./raytracer scenes/race.scene --output images/race.avs
+
 # Mirror & transparency demo scene
 ./raytracer scenes/sala_cristal.scene --mode phong --output images/pcristal_1.avs
 
